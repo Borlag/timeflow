@@ -23,12 +23,18 @@ templates.env.globals.update(datetime=dt)
 @app.on_event("startup")
 def startup():
     init_db()
-    # --- миграция: добавить project_id, если его ещё нет ---
-    with engine.connect() as conn:
+    # --- легкая миграция SQLite: добавить недостающие колонки ---
+    with engine.begin() as conn:
+        # 1) tasks.approved (bool)
+        cols = [r[1] for r in conn.execute(text("PRAGMA table_info('tasks')")).fetchall()]
+        if "approved" not in cols:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN approved INTEGER DEFAULT 1"))
+            conn.execute(text("UPDATE tasks SET approved = 1 WHERE approved IS NULL"))
+
+        # 2) time_entries.project_id (для списания на проект)
         cols = [r[1] for r in conn.execute(text("PRAGMA table_info('time_entries')")).fetchall()]
         if "project_id" not in cols:
             conn.execute(text("ALTER TABLE time_entries ADD COLUMN project_id INTEGER"))
-            conn.commit()
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
