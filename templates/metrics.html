@@ -1,18 +1,35 @@
 {% extends "base.html" %}
 {% block content %}
-  <h2>Метрики отдела</h2>
-  <article class="surface chart-card">
-    <header>Utilization по сотрудникам (последние 28 дней)</header>
-    <canvas id="c1"></canvas>
-  </article>
-  <article class="surface chart-card">
-    <header>План/Факт часов по проектам</header>
-    <canvas id="c2"></canvas>
-  </article>
-  <article class="surface chart-card">
-    <header>Нагрузка по отделам (часы за 14 дней)</header>
-    <canvas id="c3"></canvas>
-  </article>
+  <header class="page-header">
+    <div>
+      <h1>Метрики отдела</h1>
+      <p class="muted">Актуальные данные за последние недели</p>
+    </div>
+  </header>
+
+  <section class="metrics-grid">
+    <article class="surface chart-card">
+      <header>
+        <h2>Utilization по сотрудникам</h2>
+        <p class="muted">последние 28 дней</p>
+      </header>
+      <canvas id="c1" aria-label="Utilization сотрудников за последние 28 дней" role="img"></canvas>
+    </article>
+    <article class="surface chart-card">
+      <header>
+        <h2>План/Факт часов по проектам</h2>
+        <p class="muted">сравнение по проектам</p>
+      </header>
+      <canvas id="c2" aria-label="План и факт часов по проектам" role="img"></canvas>
+    </article>
+    <article class="surface chart-card">
+      <header>
+        <h2>Нагрузка по отделам</h2>
+        <p class="muted">часы за 14 дней</p>
+      </header>
+      <canvas id="c3" aria-label="Нагрузка по отделам за 14 дней" role="img"></canvas>
+    </article>
+  </section>
   <script>
     async function draw() {
       const u = await (await fetch('/api/metrics/utilization')).json();
@@ -26,7 +43,23 @@
             { label: 'Отсутствия', data: u.leave_hours, stack: 's' },
           ]
         },
-        options: { responsive: true, plugins: { legend: { position: 'top' }}, scales: { x: { stacked: true }, y: { stacked: true } } }
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          layout: { padding: 16 },
+          plugins: {
+            legend: {
+              position: 'top',
+              align: 'start',
+              labels: { usePointStyle: true, boxWidth: 10, padding: 14 }
+            }
+          },
+          scales: {
+            x: { stacked: true, ticks: { maxRotation: 0, autoSkip: false } },
+            y: { stacked: true }
+          }
+        }
       });
 
       const p = await (await fetch('/api/metrics/project_load')).json();
@@ -39,7 +72,22 @@
             { label: 'Факт', data: p.actual_hours },
           ]
         },
-        options: { responsive: true }
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          layout: { padding: 16 },
+          plugins: {
+            legend: {
+              position: 'top',
+              align: 'start',
+              labels: { usePointStyle: true, boxWidth: 10, padding: 14 }
+            }
+          },
+          scales: {
+            x: { ticks: { maxRotation: 0, autoSkip: false } }
+          }
+        }
       });
 
       const d = await (await fetch('/api/metrics/department_workload')).json();
@@ -47,7 +95,22 @@
       new Chart(ctx3, {
         type: 'bar',
         data: { labels: d.labels, datasets: [{ label: 'Часы', data: d.hours }] },
-        options: { responsive: true }
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          layout: { padding: 16 },
+          plugins: {
+            legend: {
+              position: 'top',
+              align: 'start',
+              labels: { usePointStyle: true, boxWidth: 10, padding: 14 }
+            }
+          },
+          scales: {
+            x: { ticks: { maxRotation: 0, autoSkip: false } }
+          }
+        }
       });
     }
     draw();
