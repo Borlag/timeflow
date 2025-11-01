@@ -74,6 +74,14 @@ LEAVE_STATUS_LABELS = {
     LeaveStatus.rejected.value: "Отклонено",
 }
 
+ROLE_LABELS = {
+    Role.employee.value: "Сотрудник",
+    Role.manager.value: "Руководитель",
+    Role.admin.value: "Администратор",
+}
+
+ROLE_CHOICES = [(role.value, ROLE_LABELS[role.value]) for role in Role]
+
 
 @dataclass
 class CalendarRow:
@@ -728,7 +736,17 @@ def approve_leave(request: Request, db: Session = Depends(get_db), user: User = 
 @app.get("/admin/users", response_class=HTMLResponse)
 def users_page(request: Request, db: Session = Depends(get_db), user: User = Depends(require_roles(Role.admin))):
     users = db.scalars(select(User).order_by(User.full_name)).all()
-    return templates.TemplateResponse("users.html", {"request": request, "user": user, "users": users, "app_name": APP_NAME})
+    return templates.TemplateResponse(
+        "users.html",
+        {
+            "request": request,
+            "user": user,
+            "users": users,
+            "app_name": APP_NAME,
+            "role_labels": ROLE_LABELS,
+            "role_choices": ROLE_CHOICES,
+        },
+    )
 
 @app.post("/admin/users/new")
 def user_new(request: Request, db: Session = Depends(get_db), user: User = Depends(require_roles(Role.admin)),

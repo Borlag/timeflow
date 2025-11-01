@@ -249,6 +249,10 @@
   white-space: normal;
 }
 
+.table-wrapper td.reset-cell {
+  white-space: normal;
+}
+
 .table-wrapper td .badge { white-space: nowrap; }
 
 .inline-form {
@@ -258,9 +262,22 @@
   flex-wrap: wrap;
 }
 
+.reset-form {
+  gap: .4rem;
+}
+
 .inline-form input,
 .inline-form select {
   min-width: 160px;
+}
+
+.reset-form input {
+  min-width: 0;
+  flex: 1 1 140px;
+}
+
+.reset-form button {
+  flex-shrink: 0;
 }
 
 .inline-form button {
