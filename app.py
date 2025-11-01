@@ -44,6 +44,36 @@ LEAVE_STATUS_CLASS = {
     LeaveStatus.rejected: "rejected",
 }
 
+TASK_STATUS_LABELS = {
+    TaskStatus.in_progress.value: "В работе",
+    TaskStatus.on_pause.value: "Пауза",
+    TaskStatus.waiting.value: "Ожидание",
+    TaskStatus.done.value: "Готово",
+    TaskStatus.canceled.value: "Отменено",
+}
+
+PRIORITY_LABELS = {
+    Priority.low.value: "Низкий",
+    Priority.medium.value: "Средний",
+    Priority.high.value: "Высокий",
+    Priority.critical.value: "Критический",
+}
+
+LEAVE_TYPE_LABELS = {
+    LeaveType.remote.value: "Удалённая работа",
+    LeaveType.sick.value: "Больничный",
+    LeaveType.personal.value: "Личный день",
+    LeaveType.business_trip.value: "Командировка",
+    LeaveType.vacation.value: "Отпуск",
+    LeaveType.admin_leave.value: "Административный отпуск",
+}
+
+LEAVE_STATUS_LABELS = {
+    LeaveStatus.pending.value: "На рассмотрении",
+    LeaveStatus.approved.value: "Одобрено",
+    LeaveStatus.rejected.value: "Отклонено",
+}
+
 
 @dataclass
 class CalendarRow:
@@ -341,7 +371,7 @@ def timesheet(
     date: str | None = None,
     error: str | None = None,
 ):
-    default_date = dt.date.today() - dt.timedelta(days=1)
+    default_date = dt.date.today()
     if date:
         try:
             d = _parse_iso_date(date)
@@ -377,7 +407,7 @@ def add_time_entry(request: Request, db: Session = Depends(get_db), user: User =
     try:
         d = _parse_iso_date(date)
     except ValueError:
-        return _timesheet_error_redirect(dt.date.today() - dt.timedelta(days=1), "invalid_date")
+        return _timesheet_error_redirect(dt.date.today(), "invalid_date")
 
     today = dt.date.today()
     delta_days = (today - d).days
@@ -811,6 +841,39 @@ def api_department_workload(db: Session = Depends(get_db), user: User = Depends(
 
 def _users_for_form(db: Session):
     return db.scalars(select(User).order_by(User.full_name)).all()
+
+
+def _enum_value(value):
+    return getattr(value, "value", value)
+
+
+def _status_label(value):
+    key = _enum_value(value)
+    return TASK_STATUS_LABELS.get(key, key)
+
+
+def _priority_label(value):
+    key = _enum_value(value)
+    return PRIORITY_LABELS.get(key, key)
+
+
+def _leave_type_label(value):
+    key = _enum_value(value)
+    return LEAVE_TYPE_LABELS.get(key, key)
+
+
+def _leave_status_label(value):
+    key = _enum_value(value)
+    return LEAVE_STATUS_LABELS.get(key, key)
+
+
+templates.env.filters.update({
+    "enum_value": _enum_value,
+    "status_label": _status_label,
+    "priority_label": _priority_label,
+    "leave_type_label": _leave_type_label,
+    "leave_status_label": _leave_status_label,
+})
 
 templates.env.globals.update(Role=Role, TaskStatus=TaskStatus, Priority=Priority, LeaveType=LeaveType)
 templates.env.globals.update(org_name=ORG_NAME, app_name=APP_NAME, SHIFT_HOURS=SHIFT_HOURS)

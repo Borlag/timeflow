@@ -56,11 +56,11 @@
         {% for t in tasks %}
           <tr>
             <td>
-              <strong class="priority-{{ t.priority }}">{{ t.title }}</strong><br>
+              <strong class="priority-{{ t.priority|enum_value }}">{{ t.title }}</strong><br>
               <small>{{ t.description }}</small>
             </td>
             <td>{{ t.project.code if t.project else "—" }}</td>
-            <td><span class="badge status-{{ t.status }}">{{ t.status }}</span></td>
+            <td><span class="badge status-{{ t.status|enum_value }}">{{ t.status|status_label }}</span></td>
             <td>{{ t.percent_complete }}%</td>
             <td>{{ t.due_date or "—" }}</td>
             <td>
@@ -71,7 +71,7 @@
                   <label>Статус
                     <select name="status_v">
                       {% for s in TaskStatus %}
-                      <option value="{{ s.value }}" {% if s==t.status %}selected{% endif %}>{{ s.value }}</option>
+                      <option value="{{ s.value }}" {% if s==t.status %}selected{% endif %}>{{ s|status_label }}</option>
                       {% endfor %}
                     </select>
                   </label>

@@ -1,9 +1,10 @@
 {% extends "base.html" %}
 {% block content %}
   <h2>Согласования</h2>
-  <div class="grid">
-    <section>
+  <div class="approvals-grid">
+    <section class="surface">
       <h3>Время на согласовании</h3>
+      <div class="table-wrapper">
       <table>
         <thead><tr><th>Сотрудник</th><th>Дата</th><th>Часы</th><th>Комментарий</th><th>Действия</th></tr></thead>
         <tbody>
@@ -14,24 +15,28 @@
             <td>{{ '%.2f'|format(e.hours) }}</td>
             <td>{{ e.notes }}</td>
             <td>
-              <form method="post" action="/admin/approve_time" style="display:inline">
-                <input type="hidden" name="entry_id" value="{{ e.id }}">
-                <input type="hidden" name="approve" value="1">
-                <button type="submit">Одобрить</button>
-              </form>
-              <form method="post" action="/admin/approve_time" style="display:inline">
-                <input type="hidden" name="entry_id" value="{{ e.id }}">
-                <input type="hidden" name="approve" value="0">
-                <button class="secondary" type="submit">Отклонить</button>
-              </form>
+              <div class="approval-actions">
+                <form method="post" action="/admin/approve_time">
+                  <input type="hidden" name="entry_id" value="{{ e.id }}">
+                  <input type="hidden" name="approve" value="1">
+                  <button type="submit">Одобрить</button>
+                </form>
+                <form method="post" action="/admin/approve_time">
+                  <input type="hidden" name="entry_id" value="{{ e.id }}">
+                  <input type="hidden" name="approve" value="0">
+                  <button class="secondary" type="submit">Отклонить</button>
+                </form>
+              </div>
             </td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
+      </div>
     </section>
-    <section>
+    <section class="surface">
       <h3>Заявки на отсутствие</h3>
+      <div class="table-wrapper">
       <table>
         <thead><tr><th>Сотрудник</th><th>Период</th><th>Тип</th><th>Комментарий</th><th>Действия</th></tr></thead>
         <tbody>
@@ -39,28 +44,32 @@
           <tr>
             <td>{{ r.user.full_name }}</td>
             <td>{{ r.date_from }} — {{ r.date_to }}</td>
-            <td>{{ r.type }}</td>
+            <td>{{ r.type|leave_type_label }}</td>
             <td>{{ r.comment }}</td>
             <td>
-              <form method="post" action="/admin/approve_leave" style="display:inline">
-                <input type="hidden" name="leave_id" value="{{ r.id }}">
-                <input type="hidden" name="approve" value="1">
-                <button type="submit">Одобрить</button>
-              </form>
-              <form method="post" action="/admin/approve_leave" style="display:inline">
-                <input type="hidden" name="leave_id" value="{{ r.id }}">
-                <input type="hidden" name="approve" value="0">
-                <button class="secondary" type="submit">Отклонить</button>
-              </form>
+              <div class="approval-actions">
+                <form method="post" action="/admin/approve_leave">
+                  <input type="hidden" name="leave_id" value="{{ r.id }}">
+                  <input type="hidden" name="approve" value="1">
+                  <button type="submit">Одобрить</button>
+                </form>
+                <form method="post" action="/admin/approve_leave">
+                  <input type="hidden" name="leave_id" value="{{ r.id }}">
+                  <input type="hidden" name="approve" value="0">
+                  <button class="secondary" type="submit">Отклонить</button>
+                </form>
+              </div>
             </td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
+      </div>
     </section>
 
-    <section>
+    <section class="surface">
       <h3>Задачи на согласовании</h3>
+      <div class="table-wrapper">
       <table>
         <thead><tr><th>Задача</th><th>Проект</th><th>Исполнитель</th><th>Создал</th><th>Срок</th><th>Действия</th></tr></thead>
         <tbody>
@@ -72,16 +81,18 @@
             <td>{{ t.created_by.full_name }}</td>
             <td>{{ t.due_date or "—" }}</td>
             <td>
-              <form method="post" action="/admin/approve_task" style="display:inline">
-                <input type="hidden" name="task_id" value="{{ t.id }}">
-                <input type="hidden" name="approve" value="1">
-                <button type="submit">Одобрить</button>
-              </form>
-              <form method="post" action="/admin/approve_task" style="display:inline">
-                <input type="hidden" name="task_id" value="{{ t.id }}">
-                <input type="hidden" name="approve" value="0">
-                <button class="secondary">Отклонить</button>
-              </form>
+              <div class="approval-actions">
+                <form method="post" action="/admin/approve_task">
+                  <input type="hidden" name="task_id" value="{{ t.id }}">
+                  <input type="hidden" name="approve" value="1">
+                  <button type="submit">Одобрить</button>
+                </form>
+                <form method="post" action="/admin/approve_task">
+                  <input type="hidden" name="task_id" value="{{ t.id }}">
+                  <input type="hidden" name="approve" value="0">
+                  <button class="secondary">Отклонить</button>
+                </form>
+              </div>
             </td>
           </tr>
           {% endfor %}
@@ -90,6 +101,7 @@
           {% endif %}
         </tbody>
       </table>
+      </div>
     </section>
   </div>
 {% endblock %}

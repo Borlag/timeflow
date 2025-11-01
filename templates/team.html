@@ -1,19 +1,21 @@
 {% extends "base.html" %}
 {% block content %}
   <h2>Сводка по сотрудникам (сегодня)</h2>
-  <table>
-    <thead><tr><th>Сотрудник</th><th>Отдел</th><th>Текущая задача</th><th>Статус</th><th>Чек-ин</th><th>Чек-аут</th></tr></thead>
-    <tbody>
-      {% for u, t, a in rows %}
-      <tr>
-        <td>{{ u.full_name }}</td>
-        <td>{{ u.department }}</td>
-        <td>{{ t.title if t else "—" }}</td>
-        <td>{% if t %}<span class="badge status-{{ t.status }}">{{ t.status }}</span>{% else %}—{% endif %}</td>
-        <td>{{ a.check_in.strftime("%H:%M") if a and a.check_in else "—" }}</td>
-        <td>{{ a.check_out.strftime("%H:%M") if a and a.check_out else "—" }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Сотрудник</th><th>Отдел</th><th>Текущая задача</th><th>Статус</th><th>Чек-ин</th><th>Чек-аут</th></tr></thead>
+      <tbody>
+        {% for u, t, a in rows %}
+        <tr>
+          <td>{{ u.full_name }}</td>
+          <td>{{ u.department }}</td>
+          <td>{{ t.title if t else "—" }}</td>
+          <td>{% if t %}<span class="badge status-{{ t.status|enum_value }}">{{ t.status|status_label }}</span>{% else %}—{% endif %}</td>
+          <td>{{ a.check_in.strftime("%H:%M") if a and a.check_in else "—" }}</td>
+          <td>{{ a.check_out.strftime("%H:%M") if a and a.check_out else "—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 {% endblock %}
