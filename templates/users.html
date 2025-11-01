@@ -1,27 +1,29 @@
 {% extends "base.html" %}
 {% block content %}
   <h2>Пользователи</h2>
-  <table>
-    <thead><tr><th>Имя</th><th>Логин</th><th>Email</th><th>Отдел</th><th>Роль</th><th>Сброс пароля</th></tr></thead>
-    <tbody>
-      {% for u in users %}
-      <tr>
-        <td>{{ u.full_name }}</td>
-        <td>{{ u.username }}</td>
-        <td>{{ u.email }}</td>
-        <td>{{ u.department }}</td>
-        <td>{{ u.role }}</td>
-        <td>
-          <form method="post" action="/admin/users/reset_password" class="grid">
-            <input type="hidden" name="user_id" value="{{ u.id }}">
-            <input type="password" name="new_password" placeholder="новый пароль" required>
-            <button type="submit">Сбросить</button>
-          </form>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Имя</th><th>Логин</th><th>Email</th><th>Отдел</th><th>Роль</th><th>Сброс пароля</th></tr></thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td>{{ u.full_name }}</td>
+          <td>{{ u.username }}</td>
+          <td>{{ u.email }}</td>
+          <td>{{ u.department }}</td>
+          <td>{{ u.role }}</td>
+          <td>
+            <form method="post" action="/admin/users/reset_password" class="inline-form">
+              <input type="hidden" name="user_id" value="{{ u.id }}">
+              <input type="password" name="new_password" placeholder="новый пароль" required>
+              <button type="submit">Сбросить</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 
   <hr>
   <h3>Создать пользователя</h3>

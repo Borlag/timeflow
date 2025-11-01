@@ -1,15 +1,15 @@
 {% extends "base.html" %}
 {% block content %}
   <h2>Метрики отдела</h2>
-  <article>
+  <article class="surface chart-card">
     <header>Utilization по сотрудникам (последние 28 дней)</header>
     <canvas id="c1"></canvas>
   </article>
-  <article>
+  <article class="surface chart-card">
     <header>План/Факт часов по проектам</header>
     <canvas id="c2"></canvas>
   </article>
-  <article>
+  <article class="surface chart-card">
     <header>Нагрузка по отделам (часы за 14 дней)</header>
     <canvas id="c3"></canvas>
   </article>

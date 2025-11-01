@@ -2,6 +2,7 @@
 {% block content %}
   {% set prev = date - datetime.timedelta(days=1) %}
   {% set next = date + datetime.timedelta(days=1) %}
+  {% set today = datetime.date.today() %}
   <h2>Табель на дату {{ date.isoformat() }}</h2>
   {% if error_message %}
     <article class="secondary">{{ error_message }}</article>
@@ -38,46 +39,54 @@
   </article>
 
   <h3>Введённые записи</h3>
-  <table class="sticky-table">
-    <thead><tr><th>Проект/Задача</th><th>Часы</th><th>Статус</th><th>Комментарий</th><th>Действия</th></tr></thead>
-    <tbody>
-      {% for e in entries %}
-      <tr>
-        <td>
-          {% if e.task %}
-            {{ e.task.project.code if e.task.project else "—" }} — {{ e.task.title }}
-          {% elif e.project %}
-            {{ e.project.code }} — (без задачи)
-          {% else %}
-            Непроектная
-          {% endif %}
-        </td>
-        <td>{{ '%.2f'|format(e.hours) }}</td>
-        <td>{% if e.approved %}<span class="badge status-done">OK</span>{% else %}<span class="badge status-waiting">на согласовании</span>{% endif %}</td>
-        <td>{{ e.notes }}</td>
-        <td>
-          {% if not e.locked %}
-          <form method="post" action="/timesheet/delete">
-            <input type="hidden" name="entry_id" value="{{ e.id }}">
-            <button type="submit" class="secondary">Удалить</button>
-          </form>
-          {% else %}—{% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-      {% if entries|length == 0 %}
-      <tr><td colspan="5" class="muted">Пока нет записей за эту дату</td></tr>
-      {% endif %}
-    </tbody>
-  </table>
+  <div class="table-wrapper sticky-table">
+    <table>
+      <thead><tr><th>Проект/Задача</th><th>Часы</th><th>Статус</th><th>Комментарий</th><th>Действия</th></tr></thead>
+      <tbody>
+        {% for e in entries %}
+        <tr>
+          <td>
+            {% if e.task %}
+              {{ e.task.project.code if e.task.project else "—" }} — {{ e.task.title }}
+            {% elif e.project %}
+              {{ e.project.code }} — (без задачи)
+            {% else %}
+              Непроектная
+            {% endif %}
+          </td>
+          <td>{{ '%.2f'|format(e.hours) }}</td>
+          <td>{% if e.approved %}<span class="badge status-done">OK</span>{% else %}<span class="badge status-waiting">на согласовании</span>{% endif %}</td>
+          <td>{{ e.notes }}</td>
+          <td>
+            {% if not e.locked %}
+            <form method="post" action="/timesheet/delete">
+              <input type="hidden" name="entry_id" value="{{ e.id }}">
+              <button type="submit" class="secondary">Удалить</button>
+            </form>
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        {% if entries|length == 0 %}
+        <tr><td colspan="5" class="muted">Пока нет записей за эту дату</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
 
   <nav class="pager">
     <a href="/timesheet?date={{ prev.isoformat() }}" class="contrast">← {{ prev.strftime("%d.%m") }}</a>
-    <a href="/timesheet?date={{ datetime.date.today().isoformat() }}" class="secondary">Сегодня</a>
-    {% if date < datetime.date.today() %}
+    {% if date != today %}
+      <a href="/timesheet?date={{ today.isoformat() }}" class="secondary">Сегодня · {{ today.strftime("%d.%m") }}</a>
+    {% else %}
+      <span class="badge status-done">Сегодня · {{ today.strftime("%d.%m") }}</span>
+    {% endif %}
+    {% if date < today %}
       <a href="/timesheet?date={{ next.isoformat() }}" class="contrast">{{ next.strftime("%d.%m") }} →</a>
     {% endif %}
   </nav>
+
+  <p class="muted">Текущая дата табеля: {{ date.strftime("%d.%m.%Y") }}. Сегодня: {{ today.strftime("%d.%m.%Y") }}.</p>
 
   <p><a href="/timesheet/grid">Вид «Календарь задач»</a> · <a href="/calendar/team">Календарь отдела</a></p>
 {% endblock %}
