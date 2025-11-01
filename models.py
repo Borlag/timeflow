@@ -1,5 +1,17 @@
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import String, Integer, Boolean, Date, DateTime, Enum, ForeignKey, Float, Text, UniqueConstraint, func
+from sqlalchemy import (
+    String,
+    Integer,
+    Boolean,
+    Date,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Float,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from db import Base
 import enum
 import datetime as dt
@@ -82,9 +94,10 @@ class Project(Base):
     owner: Mapped["User"] = relationship()
     tasks: Mapped[list["Task"]] = relationship(back_populates="project")
 
-    __table_args__ = (UniqueConstraint("code", name="uq_project_code"), )
-    members: Mapped[list["ProjectMember"]] = relationship(backref="project", cascade="all, delete-orphan")
-    tasks: Mapped[list["Task"]] = relationship(back_populates="project")
+    __table_args__ = (UniqueConstraint("code", name="uq_project_code"),)
+    members: Mapped[list["ProjectMember"]] = relationship(
+        backref="project", cascade="all, delete-orphan"
+    )
 
 class Task(Base):
     __tablename__ = "tasks"
@@ -137,12 +150,20 @@ class TimeEntry(Base):
     approved: Mapped[bool] = mapped_column(Boolean, default=True)  # if backfilled beyond policy, set False until approved
     locked: Mapped[bool] = mapped_column(Boolean, default=False)   # Admin can lock entries after payroll/period close
     entry_type: Mapped[str] = mapped_column(String(30), default="work")  # work/leave/admin_adjustment
-    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime, default=dt.datetime.utcnow
+    )
+    leave_request_id: Mapped[int | None] = mapped_column(
+        ForeignKey("leave_requests.id"), nullable=True
+    )
 
     user: Mapped["User"] = relationship(back_populates="time_entries")
     task: Mapped["Task"] = relationship(back_populates="time_entries")
     project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
     project: Mapped["Project"] = relationship("Project")
+    leave_request: Mapped["LeaveRequest"] = relationship(
+        "LeaveRequest", back_populates="time_entries"
+    )
 
 class Attendance(Base):
     __tablename__ = "attendance"
@@ -163,7 +184,12 @@ class LeaveRequest(Base):
     status: Mapped[LeaveStatus] = mapped_column(Enum(LeaveStatus), default=LeaveStatus.pending)
     approver_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     comment: Mapped[str] = mapped_column(Text, default="")
-    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime, default=dt.datetime.utcnow
+    )
 
     user: Mapped["User"] = relationship(foreign_keys=[user_id])
     approver: Mapped["User"] = relationship(foreign_keys=[approver_id])
+    time_entries: Mapped[list["TimeEntry"]] = relationship(
+        back_populates="leave_request", cascade="all, delete-orphan"
+    )

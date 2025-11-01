@@ -1,17 +1,57 @@
 import datetime as dt
-from collections import defaultdict
+from dataclasses import dataclass
+from math import isfinite
+from typing import Iterable
 
 from fastapi import FastAPI, Depends, Request, Form, status, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy.orm import Session, aliased
-from sqlalchemy import select, func, or_, text
+from sqlalchemy.orm import Session
+from sqlalchemy import select, func, or_, text, delete
 
 from db import init_db, SessionLocal, engine
-from models import *
+from models import (
+    Attendance,
+    LeaveRequest,
+    LeaveStatus,
+    LeaveType,
+    Priority,
+    Project,
+    ProjectMember,
+    Role,
+    Task,
+    TaskComment,
+    TaskStatus,
+    TimeEntry,
+    User,
+)
 from auth import get_db, get_current_user, require_roles, install_session_middleware, get_password_hash, verify_password
 from config import APP_NAME, ORG_NAME, SHIFT_HOURS, ALLOW_BACKFILL_DAYS, ENABLE_SIGNUP
+
+LEAVE_SHORT_CODES = {
+    LeaveType.remote: "У",
+    LeaveType.sick: "Б",
+    LeaveType.personal: "О",
+    LeaveType.business_trip: "К",
+    LeaveType.vacation: "ОП",
+    LeaveType.admin_leave: "АО",
+}
+
+LEAVE_STATUS_CLASS = {
+    LeaveStatus.pending: "pending",
+    LeaveStatus.approved: "approved",
+    LeaveStatus.rejected: "rejected",
+}
+
+
+@dataclass
+class CalendarRow:
+    user: User
+    hours: dict[dt.date, float]
+    marks: dict[dt.date, str]
+    colors: dict[dt.date, str]
+
 
 app = FastAPI(title=APP_NAME)
 install_session_middleware(app)
@@ -25,16 +65,19 @@ def startup():
     init_db()
     # --- легкая миграция SQLite: добавить недостающие колонки ---
     with engine.begin() as conn:
-        # 1) tasks.approved (bool)
-        cols = [r[1] for r in conn.execute(text("PRAGMA table_info('tasks')")).fetchall()]
-        if "approved" not in cols:
+        cols = {
+            table: {row[1] for row in conn.execute(text(f"PRAGMA table_info('{table}')"))}
+            for table in ("tasks", "time_entries")
+        }
+        if "approved" not in cols["tasks"]:
             conn.execute(text("ALTER TABLE tasks ADD COLUMN approved INTEGER DEFAULT 1"))
             conn.execute(text("UPDATE tasks SET approved = 1 WHERE approved IS NULL"))
 
-        # 2) time_entries.project_id (для списания на проект)
-        cols = [r[1] for r in conn.execute(text("PRAGMA table_info('time_entries')")).fetchall()]
-        if "project_id" not in cols:
+        if "project_id" not in cols["time_entries"]:
             conn.execute(text("ALTER TABLE time_entries ADD COLUMN project_id INTEGER"))
+
+        if "leave_request_id" not in cols["time_entries"]:
+            conn.execute(text("ALTER TABLE time_entries ADD COLUMN leave_request_id INTEGER"))
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
@@ -134,6 +177,92 @@ def allowed_projects_for(user: User, db: Session):
         ).order_by(Project.code)
     ).all()
 
+
+def _parse_iso_date(value: str, *, fallback: dt.date | None = None) -> dt.date:
+    try:
+        return dt.date.fromisoformat(value)
+    except (TypeError, ValueError):
+        if fallback is not None:
+            return fallback
+        raise
+
+
+def _parse_optional_int(raw: str | None) -> int | None:
+    if raw is None:
+        return None
+    raw = raw.strip()
+    if not raw or raw.lower() in {"0", "none", "null"}:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return None
+
+
+def _normalize_hours(raw: str) -> float:
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        raise ValueError("invalid") from None
+    if not isfinite(value) or value <= 0:
+        raise ValueError("invalid")
+    return round(value, 2)
+
+
+def _timesheet_error_redirect(target_date: dt.date, code: str) -> RedirectResponse:
+    return RedirectResponse(
+        f"/timesheet?date={target_date.isoformat()}&error={code}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
+def _daterange(start: dt.date, end: dt.date) -> Iterable[dt.date]:
+    days = (end - start).days
+    for offset in range(days + 1):
+        yield start + dt.timedelta(days=offset)
+
+
+def _sync_leave_time_entries(db: Session, leave: LeaveRequest) -> None:
+    desired_dates = list(_daterange(leave.date_from, leave.date_to))
+    existing_entries = {
+        entry.date: entry
+        for entry in db.scalars(
+            select(TimeEntry).where(TimeEntry.leave_request_id == leave.id)
+        ).all()
+    }
+
+    # Remove stale entries outside of the requested period
+    for date, entry in list(existing_entries.items()):
+        if date not in desired_dates:
+            db.delete(entry)
+            existing_entries.pop(date, None)
+
+    note = f"Leave #{leave.id}: {leave.type.value}"
+    for day in desired_dates:
+        entry = existing_entries.get(day)
+        if entry:
+            entry.hours = SHIFT_HOURS
+            entry.notes = note
+            entry.approved = True
+            entry.entry_type = "leave"
+            entry.locked = True
+        else:
+            db.add(
+                TimeEntry(
+                    user_id=leave.user_id,
+                    task_id=None,
+                    project_id=None,
+                    date=day,
+                    hours=SHIFT_HOURS,
+                    notes=note,
+                    approved=True,
+                    entry_type="leave",
+                    leave_request_id=leave.id,
+                    locked=True,
+                )
+            )
+
+
 # ---------- ATTENDANCE ----------
 
 @app.post("/attendance/checkin")
@@ -204,43 +333,86 @@ def create_task(request: Request, db: Session = Depends(get_db), user: User = De
 # ---------- TIME ENTRIES ----------
 
 @app.get("/timesheet", response_class=HTMLResponse)
-def timesheet(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user), date: str | None = None):
-    d = dt.date.fromisoformat(date) if date else (dt.date.today() - dt.timedelta(days=1))
+def timesheet(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    date: str | None = None,
+    error: str | None = None,
+):
+    default_date = dt.date.today() - dt.timedelta(days=1)
+    if date:
+        try:
+            d = _parse_iso_date(date)
+        except ValueError:
+            d = default_date
+            error = error or "invalid_date"
+    else:
+        d = default_date
+
+    error_messages = {
+        "invalid_date": "Не удалось разобрать выбранную дату.",
+        "invalid_hours": "Количество часов должно быть положительным числом.",
+        "task_missing": "Задача не найдена.",
+        "task_forbidden": "Нельзя списывать время на чужую задачу.",
+        "project_missing": "Проект не найден или закрыт.",
+        "project_forbidden": "Проект недоступен для списания времени.",
+    }
+
     entries = db.scalars(select(TimeEntry).where(TimeEntry.user_id == user.id, TimeEntry.date == d).order_by(TimeEntry.created_at)).all()
     tasks = db.scalars(select(Task).where(Task.assignee_id == user.id).order_by(Task.title)).all()
     projects = allowed_projects_for(user, db)
     return templates.TemplateResponse("timesheet.html", {
         "request": request, "user": user, "date": d, "entries": entries,
         "tasks": tasks, "projects": projects,
-        "allow_backfill_days": ALLOW_BACKFILL_DAYS, "app_name": APP_NAME
+        "allow_backfill_days": ALLOW_BACKFILL_DAYS, "app_name": APP_NAME,
+        "error_message": error_messages.get(error),
     })
 
 @app.post("/timesheet/add")
 def add_time_entry(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user),
-                   date: str = Form(...), hours: float = Form(...),
+                   date: str = Form(...), hours: str = Form(...),
                    task_id: str = Form(""), project_id: str = Form(""), notes: str = Form("")):
-    d = dt.date.fromisoformat(date)
+    try:
+        d = _parse_iso_date(date)
+    except ValueError:
+        return _timesheet_error_redirect(dt.date.today() - dt.timedelta(days=1), "invalid_date")
+
     today = dt.date.today()
     delta_days = (today - d).days
     approved = not (delta_days > ALLOW_BACKFILL_DAYS or d > today)
 
-    # аккуратно разбираем task_id / project_id
-    def _to_int(s):
-        s = (s or "").strip()
-        if not s or s in {"0","None","none","null"}: return None
-        try: return int(s)
-        except: return None
+    try:
+        hours_value = _normalize_hours(hours)
+    except ValueError:
+        return _timesheet_error_redirect(d, "invalid_hours")
 
-    task_id_i = _to_int(task_id)
-    project_id_i = None if task_id_i else _to_int(project_id)  # если выбрана задача — проект игнорируем
+    task_id_i = _parse_optional_int(task_id)
+    project_id_i = None if task_id_i else _parse_optional_int(project_id)
+
+    if task_id_i:
+        task = db.get(Task, task_id_i)
+        if not task:
+            return _timesheet_error_redirect(d, "task_missing")
+        if task.assignee_id != user.id and user.role == Role.employee:
+            return _timesheet_error_redirect(d, "task_forbidden")
+        project_id_i = None
+    elif project_id_i:
+        project = db.get(Project, project_id_i)
+        if not project or project.status != "active":
+            return _timesheet_error_redirect(d, "project_missing")
+        if user.role == Role.employee:
+            allowed_ids = {p.id for p in allowed_projects_for(user, db)}
+            if project.id not in allowed_ids:
+                return _timesheet_error_redirect(d, "project_forbidden")
 
     te = TimeEntry(
         user_id=user.id, task_id=task_id_i, project_id=project_id_i,
-        date=d, hours=float(hours), notes=notes.strip(),
-        approved=approved, entry_type="work"
+        date=d, hours=hours_value, notes=notes.strip(),
+        approved=approved, entry_type="work",
     )
     db.add(te); db.commit()
-    return RedirectResponse(f"/timesheet?date={d.isoformat()}", status_code=302)
+    return RedirectResponse(f"/timesheet?date={d.isoformat()}", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @app.post("/timesheet/delete")
@@ -257,44 +429,129 @@ def delete_time_entry(request: Request, db: Session = Depends(get_db), user: Use
 # --- NEW: Team calendar view (users x days) ---
 @app.get("/calendar/team", response_class=HTMLResponse)
 def calendar_team(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user),
-                  start: str | None = None, days: int = 14):
-    start_date = dt.date.fromisoformat(start) if start else dt.date.today() - dt.timedelta(days=dt.date.today().weekday())
+                  start: str | None = None, days: int = 14,
+                  error: str | None = None, message: str | None = None):
+    if start:
+        try:
+            start_date = _parse_iso_date(start)
+        except ValueError:
+            start_date = dt.date.today() - dt.timedelta(days=dt.date.today().weekday())
+            error = error or "invalid_start"
+    else:
+        start_date = dt.date.today() - dt.timedelta(days=dt.date.today().weekday())
     days_list = [start_date + dt.timedelta(days=i) for i in range(days)]
+    end_date = days_list[-1] if days_list else start_date
+
     users = db.scalars(select(User).where(User.is_active == True).order_by(User.department, User.full_name)).all()  # noqa: E712
-    rows = []
+    rows: list[CalendarRow] = []
+    row_by_user: dict[int, CalendarRow] = {}
+
     for u in users:
-      # hours per day (approved work)
-      qh = select(TimeEntry.date, func.coalesce(func.sum(TimeEntry.hours), 0.0))\
-            .where(TimeEntry.user_id == u.id, TimeEntry.approved == True, TimeEntry.entry_type == "work",
-                   TimeEntry.date >= days_list[0], TimeEntry.date <= days_list[-1])\
-            .group_by(TimeEntry.date)
-      hours = {d: 0.0 for d in days_list}
-      for d, h in db.execute(qh):
-          hours[d] = float(h or 0.0)
-      # leave requests overlay
-      ql = select(LeaveRequest).where(LeaveRequest.user_id == u.id,
-                                      LeaveRequest.date_from <= days_list[-1],
-                                      LeaveRequest.date_to >= days_list[0])
-      marks = {d: "" for d in days_list}
-      colors = {d: "" for d in days_list}
-      for lr in db.scalars(ql).all():
-          code = {"remote":"У","sick":"Б","personal":"О","business_trip":"К","vacation":"ОП","admin_leave":"АО"}[lr.type.value]
-          rng = [lr.date_from + dt.timedelta(days=i) for i in range((lr.date_to - lr.date_from).days+1)]
-          for d in rng:
-              if d in marks:
-                  marks[d] = code
-                  colors[d] = "approved" if lr.status == LeaveStatus.approved else ("pending" if lr.status == LeaveStatus.pending else "rejected")
-      rows.append(type("Row", (), {"user": u, "hours": hours, "marks": marks, "colors": colors}))
-    return templates.TemplateResponse("calendar_team.html", {"request": request, "user": user, "rows": rows, "days_list": days_list, "app_name": APP_NAME})
+        hours = {d: 0.0 for d in days_list}
+        marks = {d: "" for d in days_list}
+        colors = {d: "" for d in days_list}
+        row = CalendarRow(user=u, hours=hours, marks=marks, colors=colors)
+        rows.append(row)
+        row_by_user[u.id] = row
+
+    user_ids = [u.id for u in users]
+    if user_ids and days_list:
+        hours_query = (
+            select(TimeEntry.user_id, TimeEntry.date, func.coalesce(func.sum(TimeEntry.hours), 0.0))
+            .where(
+                TimeEntry.user_id.in_(user_ids),
+                TimeEntry.approved == True,
+                TimeEntry.entry_type == "work",
+                TimeEntry.date >= days_list[0],
+                TimeEntry.date <= end_date,
+            )
+            .group_by(TimeEntry.user_id, TimeEntry.date)
+        )
+        for user_id, day, hours in db.execute(hours_query):
+            row = row_by_user.get(user_id)
+            if row and day in row.hours:
+                row.hours[day] = float(hours or 0.0)
+
+        leaves_query = select(LeaveRequest).where(
+            LeaveRequest.user_id.in_(user_ids),
+            LeaveRequest.date_from <= end_date,
+            LeaveRequest.date_to >= days_list[0],
+        )
+        for leave in db.scalars(leaves_query).all():
+            row = row_by_user.get(leave.user_id)
+            if not row:
+                continue
+            code = LEAVE_SHORT_CODES.get(leave.type, leave.type.value[:2].upper())
+            for day in _daterange(max(leave.date_from, days_list[0]), min(leave.date_to, end_date)):
+                if day in row.marks:
+                    row.marks[day] = code
+                    row.colors[day] = LEAVE_STATUS_CLASS.get(leave.status, "")
+
+    error_messages = {
+        "leave_exists": "Заявка на этот день уже существует.",
+        "invalid_start": "Некорректная дата начала. Показана текущая неделя.",
+    }
+    notice_messages = {
+        "leave_created": "Заявка создана и отправлена на согласование.",
+    }
+
+    return templates.TemplateResponse(
+        "calendar_team.html",
+        {
+            "request": request,
+            "user": user,
+            "rows": rows,
+            "days_list": days_list,
+            "app_name": APP_NAME,
+            "error_message": error_messages.get(error),
+            "notice_message": notice_messages.get(message),
+        },
+    )
+
 
 # --- NEW: click cell to create leave for a single date (pending) ---
 @app.post("/calendar/leave_cell")
 def calendar_leave_cell(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user),
                         date: str = Form(...), type: LeaveType = Form(...)):
-    d = dt.date.fromisoformat(date)
-    lr = LeaveRequest(user_id=user.id, type=type, date_from=d, date_to=d, status=LeaveStatus.pending, comment="Через календарь")
-    db.add(lr); db.commit()
-    return RedirectResponse(f"/calendar/team?start={(d - dt.timedelta(days=d.weekday())).isoformat()}", status_code=302)
+    try:
+        d = _parse_iso_date(date)
+    except ValueError:
+        today = dt.date.today()
+        fallback_start = today - dt.timedelta(days=today.weekday())
+        return RedirectResponse(
+            f"/calendar/team?start={fallback_start.isoformat()}&error=invalid_start",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+    period_start = d - dt.timedelta(days=d.weekday())
+    existing = db.scalar(
+        select(LeaveRequest)
+        .where(
+            LeaveRequest.user_id == user.id,
+            LeaveRequest.date_from <= d,
+            LeaveRequest.date_to >= d,
+            LeaveRequest.status != LeaveStatus.rejected,
+        )
+    )
+    if existing:
+        return RedirectResponse(
+            f"/calendar/team?start={period_start.isoformat()}&error=leave_exists",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+    lr = LeaveRequest(
+        user_id=user.id,
+        type=type,
+        date_from=d,
+        date_to=d,
+        status=LeaveStatus.pending,
+        comment="Через календарь",
+    )
+    db.add(lr)
+    db.commit()
+    return RedirectResponse(
+        f"/calendar/team?start={period_start.isoformat()}&message=leave_created",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
 
 # --- NEW: Personal timesheet grid (tasks x days) ---
 @app.get("/timesheet/grid", response_class=HTMLResponse)
@@ -427,14 +684,11 @@ def approve_leave(request: Request, db: Session = Depends(get_db), user: User = 
     if approve:
         lr.status = LeaveStatus.approved
         lr.approver_id = user.id
-        # Auto create time entries for leave days
-        d = lr.date_from
-        while d <= lr.date_to:
-            db.add(TimeEntry(user_id=lr.user_id, task_id=None, date=d, hours=SHIFT_HOURS, notes=f"Leave: {lr.type}", approved=True, entry_type="leave"))
-            d += dt.timedelta(days=1)
+        _sync_leave_time_entries(db, lr)
     else:
         lr.status = LeaveStatus.rejected
         lr.approver_id = user.id
+        db.execute(delete(TimeEntry).where(TimeEntry.leave_request_id == lr.id))
     db.commit()
     return RedirectResponse("/admin/approvals", status_code=302)
 
