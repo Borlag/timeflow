@@ -1,53 +1,226 @@
 {% extends "base.html" %}
+{% block content_class %} content--wide metrics-page{% endblock %}
 {% block content %}
-  <h2>Метрики отдела</h2>
-  <article class="surface chart-card">
-    <header>Utilization по сотрудникам (последние 28 дней)</header>
-    <canvas id="c1"></canvas>
-  </article>
-  <article class="surface chart-card">
-    <header>План/Факт часов по проектам</header>
-    <canvas id="c2"></canvas>
-  </article>
-  <article class="surface chart-card">
-    <header>Нагрузка по отделам (часы за 14 дней)</header>
-    <canvas id="c3"></canvas>
-  </article>
+  <header class="page-header">
+    <div>
+      <h1>Метрики отдела</h1>
+      <p class="muted">Актуальные данные за последние недели</p>
+    </div>
+  </header>
+
+  <section class="metrics-grid">
+    <article class="surface chart-card">
+      <header>
+        <h2>Utilization по сотрудникам</h2>
+        <p class="muted">последние 28 дней</p>
+      </header>
+      <div class="chart-card__canvas">
+        <canvas id="c1" aria-label="Utilization сотрудников за последние 28 дней" role="img"></canvas>
+      </div>
+    </article>
+    <article class="surface chart-card">
+      <header>
+        <h2>План/Факт часов по проектам</h2>
+        <p class="muted">сравнение по проектам</p>
+      </header>
+      <div class="chart-card__canvas">
+        <canvas id="c2" aria-label="План и факт часов по проектам" role="img"></canvas>
+      </div>
+    </article>
+    <article class="surface chart-card">
+      <header>
+        <h2>Нагрузка по отделам</h2>
+        <p class="muted">часы за 14 дней</p>
+      </header>
+      <div class="chart-card__canvas">
+        <canvas id="c3" aria-label="Нагрузка по отделам за 14 дней" role="img"></canvas>
+      </div>
+    </article>
+  </section>
   <script>
     async function draw() {
+      const wrappers = Array.from(document.querySelectorAll('.chart-card__canvas'));
+      const heightCache = new WeakMap();
+      const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+      const computeHeight = (wrapper) => {
+        const width = wrapper.offsetWidth || wrapper.clientWidth || 0;
+        const viewportLimit = window.innerHeight ? clamp(window.innerHeight * 0.62, 260, 520) : 520;
+        const target = clamp(width * 0.62, 240, viewportLimit);
+        const current = heightCache.get(wrapper);
+        if (!current || Math.abs(current - target) > 1) {
+          wrapper.style.setProperty('--chart-card-height', `${Math.round(target)}px`);
+          heightCache.set(wrapper, target);
+        }
+      };
+
+      const ro = 'ResizeObserver' in window
+        ? new ResizeObserver((entries) => {
+            for (const entry of entries) {
+              computeHeight(entry.target);
+            }
+          })
+        : null;
+
+      let resizeFrame;
+      const handleWindowResize = () => {
+        if (resizeFrame) return;
+        resizeFrame = requestAnimationFrame(() => {
+          wrappers.forEach(computeHeight);
+          resizeFrame = null;
+        });
+      };
+
+      wrappers.forEach((wrapper) => {
+        computeHeight(wrapper);
+        if (ro) {
+          ro.observe(wrapper);
+        }
+      });
+
+      window.addEventListener('resize', handleWindowResize, { passive: true });
+
+      const root = document.documentElement;
+      const isDark = root.getAttribute('data-theme') === 'dark';
+      const styles = getComputedStyle(root);
+      const readVar = (name, fallback) => {
+        const value = styles.getPropertyValue(name);
+        return value && value.trim() ? value.trim() : fallback;
+      };
+      const textColor = readVar('--pico-color', isDark ? '#e2e8f0' : '#1f2933');
+      const gridColor = readVar('--pico-muted-border-color', isDark ? 'rgba(148, 163, 184, 0.35)' : 'rgba(100, 116, 139, 0.3)');
+      const tooltipBg = readVar('--pico-card-background-color', isDark ? '#0f172a' : '#ffffff');
+      const primary = readVar('--pico-primary', isDark ? '#60a5fa' : '#2563eb');
+      const secondary = readVar('--pico-secondary', isDark ? '#fbbf24' : '#f97316');
+      const tertiary = isDark ? '#f472b6' : '#059669';
+      const quaternary = isDark ? '#34d399' : '#7c3aed';
+      const palette = [primary, secondary, tertiary, quaternary];
+      const withAlpha = (hex, alpha = 0.85) => {
+        const normalized = hex.trim();
+        if (!normalized.startsWith('#') || (normalized.length !== 7 && normalized.length !== 4)) {
+          return normalized;
+        }
+        const expand = normalized.length === 4
+          ? `#${normalized[1]}${normalized[1]}${normalized[2]}${normalized[2]}${normalized[3]}${normalized[3]}`
+          : normalized;
+        const bigint = parseInt(expand.slice(1), 16);
+        const r = (bigint >> 16) & 255;
+        const g = (bigint >> 8) & 255;
+        const b = bigint & 255;
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+      };
+
+      const baseOptions = ({ stacked = false, maxTicks = 8 } = {}) => ({
+        responsive: true,
+        resizeDelay: 120,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        layout: { padding: { top: 16, right: 20, bottom: 12, left: 20 } },
+        plugins: {
+          legend: {
+            display: true,
+            position: 'top',
+            align: 'start',
+            labels: {
+              usePointStyle: true,
+              boxWidth: 12,
+              padding: 16,
+              color: textColor,
+              font: { size: 13 }
+            }
+          },
+          tooltip: {
+            padding: 12,
+            bodySpacing: 6,
+            backgroundColor: tooltipBg,
+            titleColor: textColor,
+            bodyColor: textColor,
+            borderColor: gridColor,
+            borderWidth: 1,
+            displayColors: true
+          }
+        },
+        scales: {
+          x: {
+            stacked,
+            grid: { display: false },
+            ticks: {
+              color: textColor,
+              font: { size: 12 },
+              maxRotation: 0,
+              autoSkip: true,
+              maxTicksLimit: maxTicks
+            }
+          },
+          y: {
+            stacked,
+            beginAtZero: true,
+            grid: { color: gridColor },
+            ticks: {
+              color: textColor,
+              font: { size: 12 },
+              precision: 0
+            }
+          }
+        }
+      });
+
+      const commonDataset = {
+        borderRadius: 6,
+        maxBarThickness: 42,
+        categoryPercentage: 0.64,
+        barPercentage: 0.82
+      };
+
+      const makeDataset = (index, overrides) => {
+        const color = palette[index % palette.length];
+        return {
+          ...commonDataset,
+          backgroundColor: withAlpha(color, 0.88),
+          hoverBackgroundColor: withAlpha(color, 0.96),
+          borderColor: color,
+          borderWidth: 1,
+          ...overrides
+        };
+      };
+
       const u = await (await fetch('/api/metrics/utilization')).json();
       const ctx1 = document.getElementById('c1');
       new Chart(ctx1, {
         type: 'bar',
-        data: { labels: u.labels,
+        data: {
+          labels: u.labels,
           datasets: [
-            { label: 'Проектные часы', data: u.project_hours, stack: 's' },
-            { label: 'Непроектные часы', data: u.nonproject_hours, stack: 's' },
-            { label: 'Отсутствия', data: u.leave_hours, stack: 's' },
+            makeDataset(0, { label: 'Проектные часы', data: u.project_hours, stack: 'util' }),
+            makeDataset(1, { label: 'Непроектные часы', data: u.nonproject_hours, stack: 'util' }),
+            makeDataset(2, { label: 'Отсутствия', data: u.leave_hours, stack: 'util' })
           ]
         },
-        options: { responsive: true, plugins: { legend: { position: 'top' }}, scales: { x: { stacked: true }, y: { stacked: true } } }
+        options: baseOptions({ stacked: true, maxTicks: 9 })
       });
 
       const p = await (await fetch('/api/metrics/project_load')).json();
       const ctx2 = document.getElementById('c2');
       new Chart(ctx2, {
         type: 'bar',
-        data: { labels: p.labels,
+        data: {
+          labels: p.labels,
           datasets: [
-            { label: 'План', data: p.planned_hours },
-            { label: 'Факт', data: p.actual_hours },
+            makeDataset(0, { label: 'План', data: p.planned_hours }),
+            makeDataset(3, { label: 'Факт', data: p.actual_hours })
           ]
         },
-        options: { responsive: true }
+        options: baseOptions({ maxTicks: 10 })
       });
 
       const d = await (await fetch('/api/metrics/department_workload')).json();
       const ctx3 = document.getElementById('c3');
       new Chart(ctx3, {
         type: 'bar',
-        data: { labels: d.labels, datasets: [{ label: 'Часы', data: d.hours }] },
-        options: { responsive: true }
+        data: {
+          labels: d.labels,
+          datasets: [makeDataset(2, { label: 'Часы', data: d.hours })]
+        },
+        options: baseOptions({ maxTicks: 8 })
       });
     }
     draw();
