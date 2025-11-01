@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+  <h2>Календарь / Отсутствия</h2>
+  <form method="post" action="/leaves/request">
+    <div class="grid">
+      <label>Тип
+        <select name="type">
+          {% for t in LeaveType %}<option value="{{ t.value }}">{{ t.value }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>С <input type="date" name="date_from" required></label>
+      <label>По <input type="date" name="date_to" required></label>
+    </div>
+    <label>Комментарий <input type="text" name="comment"></label>
+    <button type="submit">Отправить на согласование</button>
+  </form>
+
+  <h3>Мои заявки</h3>
+  <table>
+    <thead><tr><th>Период</th><th>Тип</th><th>Статус</th><th>Комментарий</th></tr></thead>
+    <tbody>
+      {% for r in my_requests %}
+      <tr>
+        <td>{{ r.date_from }} — {{ r.date_to }}</td>
+        <td>{{ r.type }}</td>
+        <td>{{ r.status }}</td>
+        <td>{{ r.comment }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}

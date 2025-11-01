@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Вход — {{ app_name }}</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css">
+</head>
+<body>
+  <main class="container">
+    <article>
+      <hgroup>
+        <h1>{{ app_name }}</h1>
+        <h2>Учёт загрузки отдела и времени</h2>
+      </hgroup>
+      {% if error %}<mark>{{ error }}</mark>{% endif %}
+      <form method="post" action="/auth/login">
+        <label>Логин <input type="text" name="username" required></label>
+        <label>Пароль <input type="password" name="password" required></label>
+        <button type="submit">Войти</button>
+      </form>
+      {% if enable_signup %}
+      <p><a href="/auth/signup">Регистрация</a></p>
+      {% endif %}
+    </article>
+  </main>
+</body>
+</html>

@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block content %}
+  {% set prev = date - datetime.timedelta(days=1) %}
+  {% set next = date + datetime.timedelta(days=1) %}
+  <h2>Табель на дату {{ date.isoformat() }}</h2>
+  <p class="muted">Выберите <strong>задачу</strong> или <strong>проект</strong>. Если выбраны оба — учитывается задача. По умолчанию прямой ввод за предыдущий день; остальные даты — на согласовании.</p>
+
+  <article>
+    <form method="post" action="/timesheet/add" class="grid">
+      <input type="hidden" name="date" value="{{ date.isoformat() }}">
+      <label>Проект
+        <select name="project_id">
+          <option value="">—</option>
+          {% for p in projects %}
+            <option value="{{ p.id }}">{{ p.code }} — {{ p.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Задача
+        <select name="task_id">
+          <option value="">—</option>
+          {% for t in tasks %}
+          <option value="{{ t.id }}">{{ t.project.code if t.project else "—" }} — {{ t.title }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Часы
+        <input type="number" name="hours" step="0.25" min="0" required placeholder="напр. 2.5">
+      </label>
+      <label>Комментарий
+        <input type="text" name="notes" placeholder="что делал(а)">
+      </label>
+      <button type="submit">Добавить запись</button>
+    </form>
+  </article>
+
+  <h3>Введённые записи</h3>
+  <table class="sticky-table">
+    <thead><tr><th>Проект/Задача</th><th>Часы</th><th>Статус</th><th>Комментарий</th><th>Действия</th></tr></thead>
+    <tbody>
+      {% for e in entries %}
+      <tr>
+        <td>
+          {% if e.task %}
+            {{ e.task.project.code if e.task.project else "—" }} — {{ e.task.title }}
+          {% elif e.project %}
+            {{ e.project.code }} — (без задачи)
+          {% else %}
+            Непроектная
+          {% endif %}
+        </td>
+        <td>{{ '%.2f'|format(e.hours) }}</td>
+        <td>{% if e.approved %}<span class="badge status-done">OK</span>{% else %}<span class="badge status-waiting">на согласовании</span>{% endif %}</td>
+        <td>{{ e.notes }}</td>
+        <td>
+          {% if not e.locked %}
+          <form method="post" action="/timesheet/delete">
+            <input type="hidden" name="entry_id" value="{{ e.id }}">
+            <button type="submit" class="secondary">Удалить</button>
+          </form>
+          {% else %}—{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      {% if entries|length == 0 %}
+      <tr><td colspan="5" class="muted">Пока нет записей за эту дату</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+
+  <nav class="pager">
+    <a href="/timesheet?date={{ prev.isoformat() }}" class="contrast">← {{ prev.strftime("%d.%m") }}</a>
+    <a href="/timesheet?date={{ datetime.date.today().isoformat() }}" class="secondary">Сегодня</a>
+    {% if date < datetime.date.today() %}
+      <a href="/timesheet?date={{ next.isoformat() }}" class="contrast">{{ next.strftime("%d.%m") }} →</a>
+    {% endif %}
+  </nav>
+
+  <p><a href="/timesheet/grid">Вид «Календарь задач»</a> · <a href="/calendar/team">Календарь отдела</a></p>
+{% endblock %}

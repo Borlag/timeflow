@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block content %}
+  <h2>Задачи {% if request.query_params.get('mine') == '1' %}(мои){% endif %}</h2>
+  <nav><a href="/tasks?mine=1">Мои</a> | <a href="/tasks?mine=0">Все</a></nav>
+
+  <table class="sticky-table">
+    <thead><tr><th>Заголовок</th><th>Проект</th><th>Статус</th><th>Приоритет</th><th>%</th><th>Срок</th><th>Исполнитель</th><th>Согласование</th></tr></thead>
+    <tbody>
+      {% for t in tasks %}
+      <tr>
+        <td><strong>{{ t.title }}</strong><br><small>{{ t.description }}</small></td>
+        <td>{{ t.project.code if t.project else "—" }}</td>
+        <td><span class="badge status-{{ t.status }}">{{ t.status }}</span></td>
+        <td>{{ t.priority }}</td>
+        <td>{{ t.percent_complete }}%</td>
+        <td>{{ t.due_date or "—" }}</td>
+        <td>{{ t.assignee.full_name }}</td>
+        <td>{% if t.approved %}OK{% else %}<span class="badge status-waiting">на согласовании</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+      {% if tasks|length == 0 %}
+      <tr><td colspan="8" class="muted">Нет задач</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+
+  <hr>
+  <h3>Создать задачу</h3>
+  <form method="post" action="/tasks/new" class="grid">
+    <label>Заголовок <input type="text" name="title" required></label>
+    <label>Приоритет
+      <select name="priority">
+        {% for p in Priority %}<option value="{{ p.value }}">{{ p.value }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Описание <textarea name="description"></textarea></label>
+    <label>Проект
+      <select name="project_id">
+        <option value="">—</option>
+        {% for p in projects %}<option value="{{ p.id }}">{{ p.code }} — {{ p.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Исполнитель
+      <select name="assignee_id" required>
+        {% for u in users %}
+          <option value="{{ u.id }}">{{ u.full_name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Начало <input type="date" name="start_date"></label>
+    <label>Срок <input type="date" name="due_date"></label>
+    <button type="submit">Создать</button>
+  </form>
+  <p class="muted">Если задачу создаёт сотрудник, она появится у него с пометкой «на согласовании» до одобрения менеджером/админом.</p>
+{% endblock %}

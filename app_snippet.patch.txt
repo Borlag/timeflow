@@ -1,0 +1,173 @@
+# --- PATCH to app.py ---
+from sqlalchemy import select, func, or_, text
+from sqlalchemy.orm import aliased
+
+# --- MIGRATION on startup: add project_id to time_entries if missing ---
+@app.on_event("startup")
+def startup():
+    init_db()
+    with engine.connect() as conn:
+        cols = [r[1] for r in conn.execute(text("PRAGMA table_info('time_entries')")).fetchall()]
+        if "project_id" not in cols:
+            conn.execute(text("ALTER TABLE time_entries ADD COLUMN project_id INTEGER"))
+            conn.commit()
+
+# --- Helpers ---
+def allowed_projects_for(user: User, db: Session):
+    if user.role in (Role.manager, Role.admin):
+        return db.scalars(select(Project).where(Project.status=="active").order_by(Project.code)).all()
+    q = select(Project).where(
+        (Project.status=="active") & (
+            (Project.owner_id == user.id) |
+            (Project.id.in_(select(ProjectMember.project_id).where(ProjectMember.user_id == user.id)))
+        )
+    ).order_by(Project.code)
+    return db.scalars(q).all()
+
+# --- TIMESHEET: include projects, and allow project-level logging ---
+@app.get("/timesheet", response_class=HTMLResponse)
+def timesheet(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user), date: str | None = None):
+    d = dt.date.fromisoformat(date) if date else (dt.date.today() - dt.timedelta(days=1))
+    entries = db.scalars(select(TimeEntry).where(TimeEntry.user_id == user.id, TimeEntry.date == d).order_by(TimeEntry.created_at)).all()
+    tasks = db.scalars(select(Task).where(Task.assignee_id == user.id).order_by(Task.title)).all()
+    projects = allowed_projects_for(user, db)
+    return templates.TemplateResponse("timesheet.html", {"request": request, "user": user, "date": d, "entries": entries, "tasks": tasks, "projects": projects, "allow_backfill_days": ALLOW_BACKFILL_DAYS, "app_name": APP_NAME})
+
+@app.post("/timesheet/add")
+def add_time_entry(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user),
+                   date: str = Form(...), hours: float = Form(...), task_id: str = Form(""), project_id: str = Form(""), notes: str = Form("")):
+    d = dt.date.fromisoformat(date)
+    today = dt.date.today()
+    delta_days = (today - d).days
+    approved = not (delta_days > ALLOW_BACKFILL_DAYS or d > today)
+    # task/project parsing
+    task_id_int = None
+    proj_id_int = None
+    s = (task_id or "").strip()
+    if s and s not in ("0","None","none","null"):
+        try: task_id_int = int(s)
+        except: task_id_int = None
+    sp = (project_id or "").strip()
+    if sp and sp not in ("0","None","none","null"):
+        try: proj_id_int = int(sp)
+        except: proj_id_int = None
+    # If task chosen - ignore project_id; else allow project-level entry
+    te = TimeEntry(user_id=user.id, task_id=task_id_int, project_id=(None if task_id_int else proj_id_int),
+                   date=d, hours=float(hours), notes=notes.strip(), approved=approved, entry_type="work")
+    db.add(te); db.commit()
+    return RedirectResponse(f"/timesheet?date={d.isoformat()}", status_code=302)
+
+# --- PROJECT DETAIL ---
+@app.get("/projects/{project_id}", response_class=HTMLResponse)
+def project_detail(request: Request, project_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    p = db.get(Project, project_id)
+    if not p: raise HTTPException(404, "Проект не найден")
+    tasks = db.scalars(select(Task).where(Task.project_id == p.id).order_by(Task.priority.desc(), Task.due_date.nulls_last())).all()
+    members = db.scalars(select(ProjectMember).where(ProjectMember.project_id == p.id)).all()
+    users = db.scalars(select(User).order_by(User.full_name)).all()
+    return templates.TemplateResponse("project_detail.html", {"request": request, "user": user, "project": p, "tasks": tasks, "members": members, "users": users, "app_name": APP_NAME})
+
+@app.post("/projects/{project_id}/members/add")
+def project_add_member(request: Request, project_id: int, db: Session = Depends(get_db), user: User = Depends(require_roles(Role.manager, Role.admin)),
+                       user_id: int = Form(...)):
+    p = db.get(Project, project_id)
+    if not p: raise HTTPException(404, "Проект не найден")
+    exists = db.scalar(select(ProjectMember).where(ProjectMember.project_id == project_id, ProjectMember.user_id == user_id))
+    if not exists:
+        db.add(ProjectMember(project_id=project_id, user_id=user_id)); db.commit()
+    return RedirectResponse(f"/projects/{project_id}", status_code=302)
+
+@app.post("/projects/{project_id}/members/remove")
+def project_remove_member(request: Request, project_id: int, db: Session = Depends(get_db), user: User = Depends(require_roles(Role.manager, Role.admin)),
+                          member_id: int = Form(...)):
+    m = db.get(ProjectMember, member_id)
+    if m: db.delete(m); db.commit()
+    return RedirectResponse(f"/projects/{project_id}", status_code=302)
+
+# --- TASK CREATION: allow employees -> goes to approval ---
+@app.post("/tasks/new")
+def create_task(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user),
+                title: str = Form(...), description: str = Form(""), assignee_id: int = Form(...), project_id: int = Form(None),
+                priority: Priority = Form(Priority.medium), start_date: str = Form(None), due_date: str = Form(None)):
+    sd = dt.date.fromisoformat(start_date) if start_date else None
+    dd = dt.date.fromisoformat(due_date) if due_date else None
+    # if employee creates -> requires approval
+    needs_approval = (user.role == Role.employee)
+    task = Task(title=title, description=description, assignee_id=assignee_id, project_id=project_id, priority=priority,
+                start_date=sd, due_date=dd, created_by_id=user.id, approved=(not needs_approval),
+                status=(TaskStatus.waiting if needs_approval else TaskStatus.in_progress))
+    db.add(task); db.commit()
+    return RedirectResponse("/tasks?mine=0", status_code=302)
+
+# --- Approvals page: include tasks pending ---
+@app.get("/admin/approvals", response_class=HTMLResponse)
+def approvals(request: Request, db: Session = Depends(get_db), user: User = Depends(require_roles(Role.manager, Role.admin))):
+    pending_time = db.scalars(select(TimeEntry).where(TimeEntry.approved == False).order_by(TimeEntry.date.desc())).all()  # noqa: E712
+    pending_leaves = db.scalars(select(LeaveRequest).where(LeaveRequest.status == LeaveStatus.pending).order_by(LeaveRequest.created_at.desc())).all()
+    pending_tasks = db.scalars(select(Task).where(Task.approved == False).order_by(Task.created_at.desc())).all()
+    return templates.TemplateResponse("admin.html", {"request": request, "user": user, "pending_time": pending_time, "pending_leaves": pending_leaves, "pending_tasks": pending_tasks, "app_name": APP_NAME})
+
+@app.post("/admin/approve_task")
+def approve_task(request: Request, db: Session = Depends(get_db), user: User = Depends(require_roles(Role.manager, Role.admin)),
+                 task_id: int = Form(...), approve: int = Form(1)):
+    t = db.get(Task, task_id)
+    if not t: raise HTTPException(404, "Задача не найдена")
+    t.approved = bool(approve)
+    if approve and t.status == TaskStatus.waiting:
+        t.status = TaskStatus.in_progress
+    db.commit()
+    return RedirectResponse("/admin/approvals", status_code=302)
+
+# --- Metrics: include project-level time ---
+@app.get("/api/metrics/project_load")
+def api_project_load(db: Session = Depends(get_db), user: User = Depends(require_roles(Role.manager, Role.admin))):
+    # Planned vs logged per project (including project-level entries)
+    # 1) by tasks
+    q1 = select(Project.id, Project.code, func.coalesce(func.sum(TimeEntry.hours), 0.0))\
+        .join(Task, Task.project_id == Project.id, isouter=True)\
+        .join(TimeEntry, TimeEntry.task_id == Task.id, isouter=True)\
+        .where(Project.status == "active", TimeEntry.approved == True)\
+        .group_by(Project.id, Project.code)
+    logged = {pid: hours for pid, code, hours in db.execute(q1)}
+    # 2) direct project entries
+    q2 = select(Project.id, func.coalesce(func.sum(TimeEntry.hours), 0.0))\
+        .join(TimeEntry, TimeEntry.project_id == Project.id)\
+        .where(Project.status == "active", TimeEntry.approved == True)\
+        .group_by(Project.id)
+    for pid, h in db.execute(q2):
+        logged[pid] = (logged.get(pid, 0.0) + (h or 0.0))
+    projects = db.scalars(select(Project).where(Project.status == "active").order_by(Project.code)).all()
+    labels = [p.code for p in projects]
+    planned = [round(p.planned_hours or 0.0, 2) for p in projects]
+    actual = [round(logged.get(p.id, 0.0), 2) for p in projects]
+    return JSONResponse({"labels": labels, "planned_hours": planned, "actual_hours": actual})
+
+@app.get("/api/metrics/utilization")
+def api_utilization(db: Session = Depends(get_db), user: User = Depends(require_roles(Role.manager, Role.admin)),
+                    days: int = 28):
+    end = dt.date.today()
+    start = end - dt.timedelta(days=days)
+    projects = {p.id: p for p in db.scalars(select(Project)).all()}
+    data = {}
+    q = select(TimeEntry, User.full_name, Task.id, Task.project_id).join(User, User.id == TimeEntry.user_id)\
+        .join(Task, TimeEntry.task_id == Task.id, isouter=True)\
+        .where(TimeEntry.date >= start, TimeEntry.date <= end, TimeEntry.approved == True)
+    for te, full_name, task_id, task_project_id in db.execute(q):
+        if full_name not in data:
+            data[full_name] = {"project":0.0, "nonproject":0.0, "leave":0.0, "total":0.0}
+        if te.entry_type == "leave":
+            data[full_name]["leave"] += te.hours
+            data[full_name]["total"] += te.hours
+            continue
+        # work entry
+        proj_id = task_project_id or te.project_id
+        if proj_id and projects.get(proj_id) and projects[proj_id].is_project:
+            data[full_name]["project"] += te.hours
+        else:
+            data[full_name]["nonproject"] += te.hours
+        data[full_name]["total"] += te.hours
+    labels = list(data.keys())
+    project_hours = [round(data[n]["project"],2) for n in labels]
+    nonproject_hours = [round(data[n]["nonproject"],2) for n in labels]
+    leave_hours = [round(data[n]["leave"],2) for n in labels]
+    return JSONResponse({"labels": labels, "project_hours": project_hours, "nonproject_hours": nonproject_hours, "leave_hours": leave_hours})

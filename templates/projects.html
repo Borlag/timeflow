@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block content %}
+  <h2>Проекты</h2>
+  <table class="sticky-table">
+    <thead><tr><th>Код</th><th>Название</th><th>Статус</th><th>Дата создания</th><th>План часов</th><th>Факт (ч)</th><th>Владелец</th><th>Дедлайн</th><th>Действия</th></tr></thead>
+    <tbody>
+      {% for p in projects %}
+      <tr>
+        <td><a href="/projects/{{ p.id }}">{{ p.code }}</a></td>
+        <td>{{ p.name }}</td>
+        <td>{{ p.status }}</td>
+        <td>{{ p.date_created }}</td>
+        <td>{{ '%.1f'|format(p.planned_hours or 0) }}</td>
+        <td>—</td>
+        <td>{{ p.owner.full_name if p.owner else "—" }}</td>
+        <td>{{ p.planned_due_date or "—" }}</td>
+        <td>
+          {% if user.role in ['manager','admin'] and p.status!='closed' %}
+          <form method="post" action="/projects/close">
+            <input type="hidden" name="project_id" value="{{ p.id }}">
+            <button class="secondary" type="submit">Закрыть</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      {% if projects|length == 0 %}
+      <tr><td colspan="9" class="muted">Нет проектов</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+
+  {% if user.role in ['manager','admin'] %}
+  <hr>
+  <h3>Создать проект</h3>
+  <form method="post" action="/projects/new">
+    <div class="grid">
+      <label>Код <input type="text" name="code" placeholder="например C7И1234" required></label>
+      <label>Название <input type="text" name="name" required></label>
+    </div>
+    <label>Описание <textarea name="description"></textarea></label>
+    <div class="grid">
+      <label>Проектный? <select name="is_project"><option value="1">Да</option><option value="0">Нет</option></select></label>
+      <label>План часов <input type="number" step="0.5" name="planned_hours" value="0"></label>
+    </div>
+    <div class="grid">
+      <label>Ответственный
+        <select name="owner_id">
+          <option value="">—</option>
+          {% for u in users %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Плановый срок <input type="date" name="planned_due_date"></label>
+    </div>
+    <button type="submit">Создать</button>
+  </form>
+  {% endif %}
+{% endblock %}

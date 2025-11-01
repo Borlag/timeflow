@@ -1,0 +1,60 @@
+# --- NEW: Team calendar view (users x days) ---
+@app.get("/calendar/team", response_class=HTMLResponse)
+def calendar_team(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user),
+                  start: str | None = None, days: int = 14):
+    start_date = dt.date.fromisoformat(start) if start else dt.date.today() - dt.timedelta(days=dt.date.today().weekday())
+    days_list = [start_date + dt.timedelta(days=i) for i in range(days)]
+    users = db.scalars(select(User).where(User.is_active == True).order_by(User.department, User.full_name)).all()  # noqa: E712
+    rows = []
+    for u in users:
+      # hours per day (approved work)
+      qh = select(TimeEntry.date, func.coalesce(func.sum(TimeEntry.hours), 0.0))\
+            .where(TimeEntry.user_id == u.id, TimeEntry.approved == True, TimeEntry.entry_type == "work",
+                   TimeEntry.date >= days_list[0], TimeEntry.date <= days_list[-1])\
+            .group_by(TimeEntry.date)
+      hours = {d: 0.0 for d in days_list}
+      for d, h in db.execute(qh):
+          hours[d] = float(h or 0.0)
+      # leave requests overlay
+      ql = select(LeaveRequest).where(LeaveRequest.user_id == u.id,
+                                      LeaveRequest.date_from <= days_list[-1],
+                                      LeaveRequest.date_to >= days_list[0])
+      marks = {d: "" for d in days_list}
+      colors = {d: "" for d in days_list}
+      for lr in db.scalars(ql).all():
+          code = {"remote":"У","sick":"Б","personal":"О","business_trip":"К","vacation":"ОП","admin_leave":"АО"}[lr.type.value]
+          rng = [lr.date_from + dt.timedelta(days=i) for i in range((lr.date_to - lr.date_from).days+1)]
+          for d in rng:
+              if d in marks:
+                  marks[d] = code
+                  colors[d] = "approved" if lr.status == LeaveStatus.approved else ("pending" if lr.status == LeaveStatus.pending else "rejected")
+      rows.append(type("Row", (), {"user": u, "hours": hours, "marks": marks, "colors": colors}))
+    return templates.TemplateResponse("calendar_team.html", {"request": request, "user": user, "rows": rows, "days_list": days_list, "app_name": APP_NAME})
+
+# --- NEW: click cell to create leave for a single date (pending) ---
+@app.post("/calendar/leave_cell")
+def calendar_leave_cell(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user),
+                        date: str = Form(...), type: LeaveType = Form(...)):
+    d = dt.date.fromisoformat(date)
+    lr = LeaveRequest(user_id=user.id, type=type, date_from=d, date_to=d, status=LeaveStatus.pending, comment="Через календарь")
+    db.add(lr); db.commit()
+    return RedirectResponse(f"/calendar/team?start={(d - dt.timedelta(days=d.weekday())).isoformat()}", status_code=302)
+
+# --- NEW: Personal timesheet grid (tasks x days) ---
+@app.get("/timesheet/grid", response_class=HTMLResponse)
+def timesheet_grid(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user),
+                   start: str | None = None, days: int = 14):
+    start_date = dt.date.fromisoformat(start) if start else dt.date.today() - dt.timedelta(days=13)
+    days_list = [start_date + dt.timedelta(days=i) for i in range(days)]
+    # Recent tasks assigned to user (last 60 days touches or assigned)
+    tasks = db.scalars(select(Task).where(Task.assignee_id == user.id).order_by(Task.priority.desc(), Task.due_date.nulls_last())).all()
+    rows = []
+    for t in tasks:
+        q = select(TimeEntry.date, func.sum(TimeEntry.hours)).where(TimeEntry.user_id == user.id, TimeEntry.task_id == t.id,
+                                                                    TimeEntry.date >= days_list[0], TimeEntry.date <= days_list[-1],
+                                                                    TimeEntry.approved == True).group_by(TimeEntry.date)
+        hours_map = {d: 0.0 for d in days_list}
+        for d, h in db.execute(q):
+            hours_map[d] = float(h or 0.0)
+        rows.append(type("Row", (), {"task": t, "hours": hours_map}))
+    return templates.TemplateResponse("timesheet_grid.html", {"request": request, "user": user, "rows": rows, "days_list": days_list, "app_name": APP_NAME})

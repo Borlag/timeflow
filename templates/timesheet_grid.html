@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+  {% set days = days_list %}
+  <h2>Календарь задач ({{ days[0].strftime("%d.%m") }} — {{ days[-1].strftime("%d.%m") }})</h2>
+  <p class="muted">Строки — задачи, колонки — даты. Числа в ячейках — часы. Клик по дате в заголовке откроет ввод за этот день.</p>
+  <div class="grid-table">
+    <div class="header cell">Задача</div>
+    {% for d in days %}
+      <div class="header cell">
+        <a href="/timesheet?date={{ d.isoformat() }}">{{ d.strftime("%d.%m") }}</a><br>
+        <small>{{ ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"][d.weekday()] }}</small>
+      </div>
+    {% endfor %}
+    {% for row in rows %}
+      <div class="rowhead cell">
+        {{ row.task.project.code if row.task.project else "—" }} — {{ row.task.title }}
+      </div>
+      {% for d in days %}
+        {% set h = row.hours.get(d, 0.0) %}
+        <div class="cell {% if h>0 %}filled{% endif %}">{{ '%.2f'|format(h) if h>0 else "" }}</div>
+      {% endfor %}
+    {% endfor %}
+  </div>
+  <style>
+    .grid-table { display: grid; grid-template-columns: 1.5fr repeat({{ days|length }}, 1fr); gap: 2px; }
+    .cell { background: var(--pico-card-background-color); border: 1px solid var(--pico-muted-border-color); padding: .5rem; text-align: center; }
+    .header { position: sticky; top: var(--topbar-h); z-index: 6; }
+    .rowhead { text-align: left; position: sticky; left: 0; z-index: 5; }
+    .filled { background: color-mix(in hsl, var(--pico-primary), transparent 85%); }
+  </style>
+{% endblock %}

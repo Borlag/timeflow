@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block content %}
+  {% set days = days_list %}
+  <h2>Календарь отдела</h2>
+  <p class="muted">Колонки — даты, строки — сотрудники. Часы показывают суммарную работу за день. Буквы: Б — больничный, ОП — отпуск, У — удалёнка, К — командировка, О — отгул, АО — адм. отпуск.</p>
+  <div class="grid-table team">
+    <div class="header cell">Сотрудник</div>
+    {% for d in days %}
+      <div class="header cell">
+        {{ d.strftime("%d.%m") }}<br><small>{{ ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"][d.weekday()] }}</small>
+      </div>
+    {% endfor %}
+
+    {% for row in rows %}
+      <div class="rowhead cell">{{ row.user.full_name }}</div>
+      {% for d in days %}
+        {% set mark = row.marks.get(d, "") %}
+        {% set cls = row.colors.get(d, "") %}
+        <div class="cell {{ cls }}">
+          {% if mark %}{{ mark }}{% else %}{{ '%.1f'|format(row.hours.get(d, 0.0)) if row.hours.get(d, 0.0)>0 else "" }}{% endif %}
+          {% if user.id == row.user.id %}
+            <details>
+              <summary>✎</summary>
+              <form method="post" action="/calendar/leave_cell">
+                <input type="hidden" name="date" value="{{ d.isoformat() }}">
+                <select name="type">
+                  <option value="sick">Б (больничный)</option>
+                  <option value="vacation">ОП (отпуск)</option>
+                  <option value="remote">У (удалёнка)</option>
+                  <option value="business_trip">К (командировка)</option>
+                  <option value="personal">О (отгул)</option>
+                  <option value="admin_leave">АО (адм. отпуск)</option>
+                </select>
+                <button type="submit">Заявка</button>
+              </form>
+            </details>
+          {% endif %}
+        </div>
+      {% endfor %}
+    {% endfor %}
+  </div>
+
+  <style>
+    .grid-table.team { display: grid; grid-template-columns: 1.2fr repeat({{ days|length }}, 1fr); gap: 2px; }
+    .cell { background: var(--pico-card-background-color); border: 1px solid var(--pico-muted-border-color); padding: .35rem; text-align: center; min-height: 56px; }
+    .header { position: sticky; top: var(--topbar-h); z-index: 6; }
+    .rowhead { text-align: left; position: sticky; left: 0; z-index: 5; }
+    .pending { background: hsl(44 100% 85%); }
+    .approved { background: hsl(148 58% 88%); }
+    .rejected { background: hsl(3 80% 92%); }
+    details summary { cursor: pointer; font-size: .9rem; }
+  </style>
+
+  <p class="muted">Статусы: <span class="cell pending">на соглас.</span> <span class="cell approved">одобрено</span> <span class="cell rejected">отклонено</span></p>
+
+{% endblock %}

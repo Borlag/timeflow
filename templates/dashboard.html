@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block content %}
+  <h2>Дэшборд ({{ today.isoformat() }})</h2>
+
+  <details>
+    <summary>Посещаемость</summary>
+    <form method="post" action="/attendance/checkin" style="display:inline">
+      <button type="submit" {% if attendance and attendance.check_in %}disabled{% endif %}>Чек-ин</button>
+    </form>
+    <form method="post" action="/attendance/checkout" style="display:inline">
+      <button type="submit">Чек-аут</button>
+    </form>
+    {% if attendance %}
+      <p>Сегодня: {% if attendance.check_in %}начало {{ attendance.check_in.strftime("%H:%M") }}{% else %}—{% endif %}
+      {% if attendance.check_out %}, конец {{ attendance.check_out.strftime("%H:%M") }}{% endif %}</p>
+    {% endif %}
+    {% if recommended_leave %}
+      <p>Рекомендуемое время ухода: <strong>{{ recommended_leave.strftime("%H:%M") }}</strong> (норма {{ '%g'|format(SHIFT_HOURS) }} ч).</p>
+    {% endif %}
+  </details>
+
+  <h3>Мои задачи</h3>
+  <nav>
+    <a href="/dashboard?horizon=today">Сегодня</a> |
+    <a href="/dashboard?horizon=week">Неделя</a> |
+    <a href="/dashboard?horizon=month">Месяц</a>
+  </nav>
+  <table>
+    <thead><tr><th>Задача</th><th>Проект</th><th>Статус</th><th>%</th><th>Дедлайн</th><th>Действия</th></tr></thead>
+    <tbody>
+    {% for t in tasks %}
+      <tr>
+        <td>
+          <strong class="priority-{{ t.priority }}">{{ t.title }}</strong><br>
+          <small>{{ t.description }}</small>
+        </td>
+        <td>{{ t.project.code if t.project else "—" }}</td>
+        <td><span class="badge status-{{ t.status }}">{{ t.status }}</span></td>
+        <td>{{ t.percent_complete }}%</td>
+        <td>{{ t.due_date or "—" }}</td>
+        <td>
+          <details>
+            <summary>Обновить</summary>
+            <form method="post" action="/tasks/update_status">
+              <input type="hidden" name="task_id" value="{{ t.id }}">
+              <label>Статус
+                <select name="status_v">
+                  {% for s in TaskStatus %}
+                  <option value="{{ s.value }}" {% if s==t.status %}selected{% endif %}>{{ s.value }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label>% выполнения <input type="number" name="percent" min="0" max="100" value="{{ t.percent_complete }}"></label>
+              <label>Комментарий <input type="text" name="comment" placeholder="почему пауза / ожидание и т.п."></label>
+              <button type="submit">Сохранить</button>
+            </form>
+          </details>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  <article>
+    <header>Табель</header>
+    <p>За вчера введено часов: <strong>{{ '%.2f'|format(hours_logged_today) }}</strong>. Перейти к <a href="/timesheet">вводу времени</a>.</p>
+  </article>
+{% endblock %}

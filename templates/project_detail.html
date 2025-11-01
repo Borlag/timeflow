@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block content %}
+  <h2>Проект {{ project.code }} — {{ project.name }}</h2>
+  <p class="muted">Создан: {{ project.date_created }} · Статус: {{ project.status }} · План часов: {{ '%.1f'|format(project.planned_hours or 0) }}</p>
+
+  <article>
+    <h3>Задачи проекта</h3>
+    <table class="sticky-table">
+      <thead><tr><th>Заголовок</th><th>Статус</th><th>Приоритет</th><th>%</th><th>Срок</th><th>Исполнитель</th><th>Согласование</th></tr></thead>
+      <tbody>
+        {% for t in tasks %}
+        <tr>
+          <td>{{ t.title }}</td>
+          <td><span class="badge status-{{ t.status }}">{{ t.status }}</span></td>
+          <td>{{ t.priority }}</td>
+          <td>{{ t.percent_complete }}%</td>
+          <td>{{ t.due_date or "—" }}</td>
+          <td>{{ t.assignee.full_name }}</td>
+          <td>{% if t.approved %}OK{% else %}<span class="badge status-waiting">на согласовании</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+        {% if tasks|length == 0 %}
+        <tr><td colspan="7" class="muted">Задач пока нет</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </article>
+
+  <article>
+    <h3>Добавить задачу</h3>
+    <form method="post" action="/tasks/new" class="grid">
+      <input type="hidden" name="project_id" value="{{ project.id }}">
+      <label>Заголовок <input type="text" name="title" required></label>
+      <label>Приоритет
+        <select name="priority">
+          {% for p in Priority %}<option value="{{ p.value }}">{{ p.value }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Описание <textarea name="description"></textarea></label>
+      <label>Исполнитель
+        <select name="assignee_id" required>
+          {% for u in users %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Начало <input type="date" name="start_date"></label>
+      <label>Срок <input type="date" name="due_date"></label>
+      <button type="submit">Создать</button>
+    </form>
+    <p class="muted">Если задачу создаёт сотрудник, она появится со статусом «на согласовании» до одобрения менеджером/админом.</p>
+  </article>
+
+  {% if user.role in ['manager','admin'] %}
+  <article>
+    <h3>Участники проекта</h3>
+    <table>
+      <thead><tr><th>Сотрудник</th><th>Действия</th></tr></thead>
+      <tbody>
+        {% for m in members %}
+        <tr>
+          <td>{{ m.user.full_name }}</td>
+          <td>
+            <form method="post" action="/projects/{{ project.id }}/members/remove">
+              <input type="hidden" name="member_id" value="{{ m.id }}">
+              <button class="secondary">Исключить</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <form method="post" action="/projects/{{ project.id }}/members/add" class="grid">
+      <label>Добавить участника
+        <select name="user_id">
+          {% for u in users %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}
+        </select>
+      </label>
+      <button type="submit">Добавить</button>
+    </form>
+    <p class="muted">Только владелец проекта, участники, менеджеры и админы видят проект в табеле и могут списывать на него время.</p>
+  </article>
+  {% endif %}
+{% endblock %}

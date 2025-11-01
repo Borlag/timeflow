@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block content %}
+  <h2>Метрики отдела</h2>
+  <article>
+    <header>Utilization по сотрудникам (последние 28 дней)</header>
+    <canvas id="c1"></canvas>
+  </article>
+  <article>
+    <header>План/Факт часов по проектам</header>
+    <canvas id="c2"></canvas>
+  </article>
+  <article>
+    <header>Нагрузка по отделам (часы за 14 дней)</header>
+    <canvas id="c3"></canvas>
+  </article>
+  <script>
+    async function draw() {
+      const u = await (await fetch('/api/metrics/utilization')).json();
+      const ctx1 = document.getElementById('c1');
+      new Chart(ctx1, {
+        type: 'bar',
+        data: { labels: u.labels,
+          datasets: [
+            { label: 'Проектные часы', data: u.project_hours, stack: 's' },
+            { label: 'Непроектные часы', data: u.nonproject_hours, stack: 's' },
+            { label: 'Отсутствия', data: u.leave_hours, stack: 's' },
+          ]
+        },
+        options: { responsive: true, plugins: { legend: { position: 'top' }}, scales: { x: { stacked: true }, y: { stacked: true } } }
+      });
+
+      const p = await (await fetch('/api/metrics/project_load')).json();
+      const ctx2 = document.getElementById('c2');
+      new Chart(ctx2, {
+        type: 'bar',
+        data: { labels: p.labels,
+          datasets: [
+            { label: 'План', data: p.planned_hours },
+            { label: 'Факт', data: p.actual_hours },
+          ]
+        },
+        options: { responsive: true }
+      });
+
+      const d = await (await fetch('/api/metrics/department_workload')).json();
+      const ctx3 = document.getElementById('c3');
+      new Chart(ctx3, {
+        type: 'bar',
+        data: { labels: d.labels, datasets: [{ label: 'Часы', data: d.hours }] },
+        options: { responsive: true }
+      });
+    }
+    draw();
+  </script>
+{% endblock %}

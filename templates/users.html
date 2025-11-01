@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block content %}
+  <h2>Пользователи</h2>
+  <table>
+    <thead><tr><th>Имя</th><th>Логин</th><th>Email</th><th>Отдел</th><th>Роль</th><th>Сброс пароля</th></tr></thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td>{{ u.full_name }}</td>
+        <td>{{ u.username }}</td>
+        <td>{{ u.email }}</td>
+        <td>{{ u.department }}</td>
+        <td>{{ u.role }}</td>
+        <td>
+          <form method="post" action="/admin/users/reset_password" class="grid">
+            <input type="hidden" name="user_id" value="{{ u.id }}">
+            <input type="password" name="new_password" placeholder="новый пароль" required>
+            <button type="submit">Сбросить</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <hr>
+  <h3>Создать пользователя</h3>
+  <form method="post" action="/admin/users/new">
+    <div class="grid">
+      <label>Логин <input type="text" name="username" required></label>
+      <label>Полное имя <input type="text" name="full_name" required></label>
+    </div>
+    <div class="grid">
+      <label>Email <input type="email" name="email" required></label>
+      <label>Отдел <input type="text" name="department"></label>
+    </div>
+    <div class="grid">
+      <label>Роль
+        <select name="role">
+          <option value="employee">employee</option>
+          <option value="manager">manager</option>
+          <option value="admin">admin</option>
+        </select>
+      </label>
+      <label>Пароль <input type="password" name="password" required></label>
+    </div>
+    <button type="submit">Создать</button>
+  </form>
+{% endblock %}

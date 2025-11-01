@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ru" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ app_name }} — {{ user.full_name if user is defined else '' }}</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css">
+  <link rel="stylesheet" href="/static/theme.css">
+  <script src="https://cdn.jsdelivr.net/npm/htmx.org@1.9.12"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script>
+    // Theme toggle
+    (function() {
+      const key = "tf-theme";
+      const root = document.documentElement;
+      const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+      const saved = localStorage.getItem(key);
+      const theme = saved || (prefersDark ? "dark" : "light");
+      root.setAttribute("data-theme", theme);
+      window.toggleTheme = function() {
+        const next = root.getAttribute("data-theme") === "dark" ? "light" : "dark";
+        root.setAttribute("data-theme", next);
+        localStorage.setItem(key, next);
+      };
+    })();
+  </script>
+</head>
+<body class="layout">
+  <input id="nav-toggle" type="checkbox" hidden>
+  <aside class="sidebar">
+    <div class="brand">
+      <strong>{{ app_name }}</strong>
+    </div>
+    <nav class="menu">
+      <a href="/dashboard">🏠 Дэшборд</a>
+      <a href="/tasks?mine=1">✅ Мои задачи</a>
+      <a href="/timesheet">⏱ Табель</a>
+      <a href="/leaves">📅 Календарь</a>
+      <a href="/team">👥 Отдел</a>
+      {% if user and (user.role in ['manager','admin']) %}
+        <hr>
+        <a href="/projects">📁 Проекты</a>
+        <a href="/metrics">📊 Метрики</a>
+        <a href="/admin/approvals">📝 Согласования</a>
+        {% if user.role == "admin" %}<a href="/admin/users">🔐 Пользователи</a>{% endif %}
+      {% endif %}
+    </nav>
+    <div class="sidebar-bottom">
+      <button class="contrast full" onclick="toggleTheme()">🌓 Тема</button>
+      {% if user %}
+        <small class="muted">{{ user.full_name }} ({{ user.role }})</small>
+        <a href="/auth/logout" class="secondary full">Выйти</a>
+      {% endif %}
+    </div>
+  </aside>
+
+  <label class="backdrop" for="nav-toggle"></label>
+
+  <header class="topbar">
+    <label for="nav-toggle" class="burger" aria-label="Открыть меню">☰</label>
+    <div class="spacer"></div>
+  </header>
+
+  <main class="content container">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="container footer-note">
+    <small>&copy; {{ org_name if org_name is defined else '' }} • {{ app_name }}</small>
+  </footer>
+
+  <script>
+    // Daily 16:30 reminder
+    (function() {
+      if (!("Notification" in window)) return;
+      if (Notification.permission !== "granted") { Notification.requestPermission(); }
+      function scheduleReminder() {
+        const now = new Date();
+        const target = new Date();
+        target.setHours(16,30,0,0);
+        if (target < now) target.setDate(target.getDate()+1);
+        const timeout = target - now;
+        setTimeout(()=>{
+          if (Notification.permission === "granted") {
+            new Notification("Напоминание", { body: "Пора проставить время за вчера и чек-аут." });
+          }
+          scheduleReminder();
+        }, timeout);
+      }
+      scheduleReminder();
+    })();
+    // Hourly gentle reminder
+    (function() {
+      if (!("Notification" in window)) return;
+      setInterval(()=>{
+        if (document.visibilityState === 'visible' && Notification.permission === "granted") {
+          new Notification("TimeFlow", { body: "Обнови статус задачи и табель при необходимости." });
+        }
+      }, 60*60*1000);
+    })();
+  </script>
+</body>
+</html>

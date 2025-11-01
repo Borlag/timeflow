@@ -1,0 +1,38 @@
+# --- PATCH to models.py ---
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import String, Integer, Boolean, Date, DateTime, Enum, ForeignKey, Float, Text, UniqueConstraint, func
+# ... остальные импорты и enum'ы без изменений ...
+
+class ProjectMember(Base):
+    __tablename__ = "project_members"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    __table_args__ = (UniqueConstraint("project_id", "user_id", name="uq_project_member"),)
+
+class Project(Base):
+    __tablename__ = "projects"
+    # ... текущие поля ...
+    members: Mapped[list["ProjectMember"]] = relationship(backref="project", cascade="all, delete-orphan")
+    tasks: Mapped[list["Task"]] = relationship(back_populates="project")
+
+class User(Base):
+    __tablename__ = "users"
+    # ... текущие поля ...
+    tasks: Mapped[list["Task"]] = relationship("Task", back_populates="assignee", foreign_keys="Task.assignee_id")
+    time_entries: Mapped[list["TimeEntry"]] = relationship("TimeEntry", back_populates="user", foreign_keys="TimeEntry.user_id")
+    member_projects: Mapped[list["ProjectMember"]] = relationship(backref="user", cascade="all, delete-orphan")
+
+class Task(Base):
+    __tablename__ = "tasks"
+    # ... поля ...
+    project: Mapped["Project"] = relationship("Project", back_populates="tasks")
+    assignee: Mapped["User"] = relationship("User", back_populates="tasks", foreign_keys=[assignee_id])
+    created_by: Mapped["User"] = relationship("User", foreign_keys=[created_by_id])
+    approved: Mapped[bool] = mapped_column(Boolean, default=True)
+
+class TimeEntry(Base):
+    __tablename__ = "time_entries"
+    # ... текущие поля ...
+    project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
+    project: Mapped["Project"] = relationship("Project")
