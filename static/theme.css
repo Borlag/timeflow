@@ -1,4 +1,4 @@
-/* Sidebar + Compact Topbar (collapsible on desktop) — z-index fix */
+/* --- UI Fix v2: burger placement & desktop backdrop off --- */
 :root {
   --sidebar-w: 220px;
   --topbar-h: 52px;
@@ -31,6 +31,7 @@
 
 .layout { display: contents; }
 
+/* Sidebar */
 .sidebar {
   position: fixed; inset: 0 auto 0 0; width: var(--sidebar-w);
   background: var(--pico-card-background-color);
@@ -47,15 +48,17 @@
 .full { width: 100%; }
 .muted { color: var(--pico-muted-color); }
 
+/* Top bar */
 .topbar {
   position: fixed; top: 0; left: 0; right: 0;
   height: var(--topbar-h); display: flex; align-items: center; gap: .5rem;
   padding: 0 .75rem; background: var(--pico-background-color);
-  border-bottom: 1px solid var(--pico-muted-border-color); z-index: 1100; /* выше сайдбара */
+  border-bottom: 1px solid var(--pico-muted-border-color); z-index: 1100;
 }
 .burger { font-size: 1.25rem; cursor: pointer; user-select: none; }
 .spacer { flex: 1; }
 
+/* Content */
 .content { padding-top: calc(var(--topbar-h) + 1rem); }
 .container.content > * { margin-bottom: 1rem; }
 .container.content article, .container.content table, .container.content form {
@@ -65,23 +68,39 @@
   padding: 1rem;
 }
 
+/* Sticky table headers */
 .sticky-table thead th { position: sticky; top: var(--topbar-h); background: var(--pico-card-background-color); z-index: 5; }
 
+/* Backdrop (overlay) */
+.backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.25); opacity: 0; pointer-events: none; transition: opacity .2s ease; z-index: 1050; }
+/* По умолчанию на десктопе оверлея нет */
+@media (min-width: 992px) { .backdrop { display: none; } }
+/* На мобильных показываем оверлей при открытом меню */
+@media (max-width: 991px) { #nav-toggle:checked ~ .backdrop { opacity: 1; pointer-events: auto; } }
+
+/* Desktop layout behavior */
+@media (min-width: 992px) {
+  /* Открыто: сайдбар виден, топбар и контент смещены вправо */
+  .sidebar { transform: translateX(0); }
+  .topbar { left: var(--sidebar-w); }            /* <— Бургер стоит над контентом, не над меню */
+  .content, .footer-note { margin-left: var(--sidebar-w); }
+
+  /* Закрыто: сайдбар скрыт, топбар и контент занимают всю ширину */
+  #nav-toggle:checked ~ .sidebar { transform: translateX(-100%); }
+  #nav-toggle:checked ~ .topbar { left: 0; }
+  #nav-toggle:checked ~ .content,
+  #nav-toggle:checked ~ .footer-note { margin-left: 0; }
+}
+
+/* Small screens: поведение как раньше — выезжающее меню и затемнение */
+@media (max-width: 991px) {
+  #nav-toggle:checked ~ .sidebar { transform: translateX(0); }
+}
+
+/* Badges */
 .badge { padding: .15rem .5rem; border-radius: 999px; font-size: .75rem; line-height: 1.6; }
 .status-in_progress { background: var(--tf-badge-green-bg); color: var(--tf-badge-green-fg); }
 .status-on_pause   { background: var(--tf-badge-amber-bg); color: var(--tf-badge-amber-fg); }
 .status-waiting    { background: var(--tf-badge-red-bg); color: var(--tf-badge-red-fg); }
 .status-done       { background: var(--tf-badge-blue-bg); color: var(--tf-badge-blue-fg); }
 .status-canceled   { background: var(--tf-badge-gray-bg); color: var(--tf-badge-gray-fg); }
-
-.backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.25); opacity: 0; pointer-events: none; transition: opacity .2s ease; z-index: 1050; }
-
-@media (min-width: 992px) {
-  .sidebar { transform: translateX(0); }
-  .topbar { left: 0; }
-  .content, .footer-note { margin-left: var(--sidebar-w); }
-  #nav-toggle:checked ~ .sidebar { transform: translateX(-100%); }
-  #nav-toggle:checked ~ .content, #nav-toggle:checked ~ .footer-note { margin-left: 0; }
-}
-#nav-toggle:checked ~ .sidebar { transform: translateX(0); }
-#nav-toggle:checked ~ .backdrop { opacity: 1; pointer-events: auto; }
