@@ -328,6 +328,34 @@
   margin: 0;
 }
 
+.metrics-grid {
+  display: grid;
+  gap: 1.5rem;
+}
+
+@media (min-width: 1024px) {
+  .metrics-grid {
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  }
+}
+
+.chart-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.chart-card > header {
+  display: flex;
+  flex-direction: column;
+  gap: .25rem;
+}
+
+.chart-card > header h2 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
 .chart-card canvas {
   width: 100% !important;
   height: 320px !important;
