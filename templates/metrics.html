@@ -14,71 +14,25 @@
         <h2>Utilization по сотрудникам</h2>
         <p class="muted">последние 28 дней</p>
       </header>
-      <div class="chart-card__canvas">
-        <canvas id="c1" aria-label="Utilization сотрудников за последние 28 дней" role="img"></canvas>
-      </div>
+      <canvas id="c1" aria-label="Utilization сотрудников за последние 28 дней" role="img"></canvas>
     </article>
     <article class="surface chart-card">
       <header>
         <h2>План/Факт часов по проектам</h2>
         <p class="muted">сравнение по проектам</p>
       </header>
-      <div class="chart-card__canvas">
-        <canvas id="c2" aria-label="План и факт часов по проектам" role="img"></canvas>
-      </div>
+      <canvas id="c2" aria-label="План и факт часов по проектам" role="img"></canvas>
     </article>
     <article class="surface chart-card">
       <header>
         <h2>Нагрузка по отделам</h2>
         <p class="muted">часы за 14 дней</p>
       </header>
-      <div class="chart-card__canvas">
-        <canvas id="c3" aria-label="Нагрузка по отделам за 14 дней" role="img"></canvas>
-      </div>
+      <canvas id="c3" aria-label="Нагрузка по отделам за 14 дней" role="img"></canvas>
     </article>
   </section>
   <script>
     async function draw() {
-      const wrappers = Array.from(document.querySelectorAll('.chart-card__canvas'));
-      const heightCache = new WeakMap();
-      const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
-      const computeHeight = (wrapper) => {
-        const width = wrapper.offsetWidth || wrapper.clientWidth || 0;
-        const viewportLimit = window.innerHeight ? clamp(window.innerHeight * 0.62, 260, 520) : 520;
-        const target = clamp(width * 0.62, 240, viewportLimit);
-        const current = heightCache.get(wrapper);
-        if (!current || Math.abs(current - target) > 1) {
-          wrapper.style.setProperty('--chart-card-height', `${Math.round(target)}px`);
-          heightCache.set(wrapper, target);
-        }
-      };
-
-      const ro = 'ResizeObserver' in window
-        ? new ResizeObserver((entries) => {
-            for (const entry of entries) {
-              computeHeight(entry.target);
-            }
-          })
-        : null;
-
-      let resizeFrame;
-      const handleWindowResize = () => {
-        if (resizeFrame) return;
-        resizeFrame = requestAnimationFrame(() => {
-          wrappers.forEach(computeHeight);
-          resizeFrame = null;
-        });
-      };
-
-      wrappers.forEach((wrapper) => {
-        computeHeight(wrapper);
-        if (ro) {
-          ro.observe(wrapper);
-        }
-      });
-
-      window.addEventListener('resize', handleWindowResize, { passive: true });
-
       const root = document.documentElement;
       const isDark = root.getAttribute('data-theme') === 'dark';
       const styles = getComputedStyle(root);
@@ -195,7 +149,23 @@
             makeDataset(2, { label: 'Отсутствия', data: u.leave_hours, stack: 'util' })
           ]
         },
-        options: baseOptions({ stacked: true, maxTicks: 9 })
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          layout: { padding: 16 },
+          plugins: {
+            legend: {
+              position: 'top',
+              align: 'start',
+              labels: { usePointStyle: true, boxWidth: 10, padding: 14 }
+            }
+          },
+          scales: {
+            x: { stacked: true, ticks: { maxRotation: 0, autoSkip: false } },
+            y: { stacked: true }
+          }
+        }
       });
 
       const p = await (await fetch('/api/metrics/project_load')).json();
@@ -209,18 +179,45 @@
             makeDataset(3, { label: 'Факт', data: p.actual_hours })
           ]
         },
-        options: baseOptions({ maxTicks: 10 })
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          layout: { padding: 16 },
+          plugins: {
+            legend: {
+              position: 'top',
+              align: 'start',
+              labels: { usePointStyle: true, boxWidth: 10, padding: 14 }
+            }
+          },
+          scales: {
+            x: { ticks: { maxRotation: 0, autoSkip: false } }
+          }
+        }
       });
 
       const d = await (await fetch('/api/metrics/department_workload')).json();
       const ctx3 = document.getElementById('c3');
       new Chart(ctx3, {
         type: 'bar',
-        data: {
-          labels: d.labels,
-          datasets: [makeDataset(2, { label: 'Часы', data: d.hours })]
-        },
-        options: baseOptions({ maxTicks: 8 })
+        data: { labels: d.labels, datasets: [{ label: 'Часы', data: d.hours }] },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          layout: { padding: 16 },
+          plugins: {
+            legend: {
+              position: 'top',
+              align: 'start',
+              labels: { usePointStyle: true, boxWidth: 10, padding: 14 }
+            }
+          },
+          scales: {
+            x: { ticks: { maxRotation: 0, autoSkip: false } }
+          }
+        }
       });
     }
     draw();
