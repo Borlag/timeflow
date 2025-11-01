@@ -159,7 +159,8 @@ def dashboard(request: Request, db: Session = Depends(get_db), user: User = Depe
         "request": request, "user": user, "tasks": tasks,
         "today": today, "start": start, "end": end,
         "attendance": att, "hours_logged_today": hours_logged_today,
-        "recommended_leave": recommended_leave, "app_name": APP_NAME
+        "recommended_leave": recommended_leave, "app_name": APP_NAME,
+        "horizon": horizon,
     })
 
 # --- Helpers ---

@@ -3,6 +3,8 @@
   --sidebar-w: 220px;
   --topbar-h: 52px;
   --pico-border-radius: 12px;
+  --content-max-width: 1200px;
+  --content-gutter: clamp(1rem, 2.2vw + 0.5rem, 3rem);
   --tf-critical: hsl(0 75% 45%);
   --tf-badge-green-bg: hsl(148 58% 88%);
   --tf-badge-green-fg: hsl(148 45% 24%);
@@ -59,13 +61,65 @@
 .spacer { flex: 1; }
 
 /* Content */
-.content { padding-top: calc(var(--topbar-h) + 1rem); }
-.container.content > * { margin-bottom: 1rem; }
-.container.content article, .container.content table, .container.content form {
+.content {
+  padding: calc(var(--topbar-h) + 1rem) var(--content-gutter) 3rem;
+  margin: 0 auto;
+  width: min(100%, var(--content-max-width));
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.content > * {
+  margin: 0;
+}
+
+.footer-note {
+  margin: 0 auto 2.5rem;
+  width: min(100%, var(--content-max-width));
+  padding: 0 var(--content-gutter);
+}
+
+.surface,
+.content > article,
+.content > table,
+.content > form,
+.content > details {
   background: var(--pico-card-background-color);
   border: 1px solid var(--pico-muted-border-color);
   border-radius: var(--pico-border-radius);
-  padding: 1rem;
+  padding: 1.1rem 1.35rem;
+  box-shadow: 0 24px 48px -32px rgba(0, 0, 0, 0.35);
+}
+
+.surface > :last-child { margin-bottom: 0; }
+.surface header { font-weight: 600; margin-bottom: .35rem; }
+.surface summary { font-weight: 600; cursor: pointer; }
+.surface summary::-webkit-details-marker { display: none; }
+.surface summary::after {
+  content: "▾";
+  font-size: .85rem;
+  margin-left: .5rem;
+  transition: transform .2s ease;
+}
+.surface[open] summary::after { transform: rotate(180deg); }
+.surface form { margin-top: .75rem; }
+.surface form button { width: fit-content; }
+
+.button-group {
+  display: flex;
+  gap: .5rem;
+  flex-wrap: wrap;
+  margin: .75rem 0;
+}
+
+.button-group form {
+  margin: 0;
+}
+
+.button-group button {
+  width: auto;
+  min-width: 120px;
 }
 
 /* Sticky table headers */
@@ -83,13 +137,19 @@
   /* Открыто: сайдбар виден, топбар и контент смещены вправо */
   .sidebar { transform: translateX(0); }
   .topbar { left: var(--sidebar-w); }            /* <— Бургер стоит над контентом, не над меню */
-  .content, .footer-note { margin-left: var(--sidebar-w); }
+  .content, .footer-note {
+    margin-left: calc(var(--sidebar-w) + var(--content-gutter));
+    width: min(calc(100% - var(--sidebar-w)), var(--content-max-width));
+  }
 
   /* Закрыто: сайдбар скрыт, топбар и контент занимают всю ширину */
   #nav-toggle:checked ~ .sidebar { transform: translateX(-100%); }
   #nav-toggle:checked ~ .topbar { left: 0; }
   #nav-toggle:checked ~ .content,
-  #nav-toggle:checked ~ .footer-note { margin-left: 0; }
+  #nav-toggle:checked ~ .footer-note {
+    margin-left: var(--content-gutter);
+    width: min(100%, var(--content-max-width));
+  }
 }
 
 /* Small screens: поведение как раньше — выезжающее меню и затемнение */
@@ -104,3 +164,90 @@
 .status-waiting    { background: var(--tf-badge-red-bg); color: var(--tf-badge-red-fg); }
 .status-done       { background: var(--tf-badge-blue-bg); color: var(--tf-badge-blue-fg); }
 .status-canceled   { background: var(--tf-badge-gray-bg); color: var(--tf-badge-gray-fg); }
+
+.page-header {
+  display: flex;
+  flex-direction: column;
+  gap: .35rem;
+}
+
+.page-header h1 {
+  margin-bottom: 0;
+  font-size: 1.85rem;
+}
+
+.page-header .range-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  padding: .35rem .65rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--pico-primary) 12%, transparent);
+  font-size: .9rem;
+  width: fit-content;
+}
+
+.grid-two {
+  display: grid;
+  gap: 1rem;
+}
+
+@media (min-width: 992px) {
+  .grid-two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.section-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .75rem;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--pico-muted-border-color);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--pico-muted-color) 6%, transparent);
+  overflow: hidden;
+}
+
+.segmented a {
+  padding: .45rem 1rem;
+  font-size: .9rem;
+  text-decoration: none;
+  color: inherit;
+  transition: background .2s ease, color .2s ease;
+}
+
+.segmented a:hover { background: color-mix(in srgb, var(--pico-primary) 12%, transparent); }
+.segmented a.active {
+  background: var(--pico-primary);
+  color: var(--pico-primary-inverse);
+}
+
+.table-wrapper {
+  overflow-x: auto;
+  margin: -0.25rem -0.5rem 0;
+  padding: 0 .5rem;
+}
+
+.table-wrapper table {
+  width: 100%;
+  margin-bottom: 0;
+}
+
+.table-wrapper th,
+.table-wrapper td {
+  white-space: nowrap;
+}
+
+.table-wrapper td:first-child {
+  min-width: 220px;
+  white-space: normal;
+}
+
+.tasks-card details summary {
+  font-weight: 500;
+}
