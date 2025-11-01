@@ -328,54 +328,32 @@
   margin: 0;
 }
 
-.content.metrics-page {
-  gap: clamp(1.35rem, 1.2vw + 0.9rem, 2.1rem);
-}
-
-.metrics-page .page-header {
-  align-items: flex-start;
-  gap: .5rem;
-}
-
 .metrics-grid {
   display: grid;
-  gap: clamp(1.25rem, 1.5vw, 2rem);
+  gap: 1.5rem;
 }
 
-@media (min-width: 768px) {
+@media (min-width: 1024px) {
   .metrics-grid {
     grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  }
-}
-
-@media (min-width: 1440px) {
-  .metrics-grid {
-    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
   }
 }
 
 .chart-card {
   display: flex;
   flex-direction: column;
-  gap: .9rem;
-  min-height: clamp(340px, 32vw, 480px);
+  gap: 1rem;
 }
 
 .chart-card > header {
   display: flex;
   flex-direction: column;
-  gap: .3rem;
+  gap: .25rem;
 }
 
 .chart-card > header h2 {
   margin: 0;
-  font-size: 1.28rem;
-}
-
-.chart-card__canvas {
-  position: relative;
-  flex: 1;
-  min-height: clamp(280px, 28vw, 420px);
+  font-size: 1.2rem;
 }
 
 .chart-card canvas {
