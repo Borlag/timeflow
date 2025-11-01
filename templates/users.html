@@ -11,9 +11,9 @@
           <td>{{ u.username }}</td>
           <td>{{ u.email }}</td>
           <td>{{ u.department }}</td>
-          <td>{{ u.role }}</td>
-          <td>
-            <form method="post" action="/admin/users/reset_password" class="inline-form">
+          <td>{{ role_labels.get(u.role.value, u.role.value) }}</td>
+          <td class="reset-cell">
+            <form method="post" action="/admin/users/reset_password" class="inline-form reset-form">
               <input type="hidden" name="user_id" value="{{ u.id }}">
               <input type="password" name="new_password" placeholder="новый пароль" required>
               <button type="submit">Сбросить</button>
@@ -39,9 +39,9 @@
     <div class="grid">
       <label>Роль
         <select name="role">
-          <option value="employee">employee</option>
-          <option value="manager">manager</option>
-          <option value="admin">admin</option>
+          {% for value, label in role_choices %}
+          <option value="{{ value }}">{{ label }}</option>
+          {% endfor %}
         </select>
       </label>
       <label>Пароль <input type="password" name="password" required></label>
