@@ -70,6 +70,11 @@
   gap: 1.25rem;
 }
 
+.content.content--wide {
+  width: 100%;
+  max-width: none;
+}
+
 .content > * {
   margin: 0;
 }
@@ -140,6 +145,10 @@
   .content, .footer-note {
     margin-left: calc(var(--sidebar-w) + var(--content-gutter));
     width: min(calc(100% - var(--sidebar-w)), var(--content-max-width));
+  }
+
+  .content.content--wide {
+    width: calc(100% - var(--sidebar-w) - var(--content-gutter));
   }
 
   /* Закрыто: сайдбар скрыт, топбар и контент занимают всю ширину */
@@ -234,7 +243,8 @@
 }
 
 .table-wrapper table {
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
   margin-bottom: 0;
 }
 
