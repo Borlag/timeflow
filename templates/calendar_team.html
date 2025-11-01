@@ -2,6 +2,12 @@
 {% block content %}
   {% set days = days_list %}
   <h2>Календарь отдела</h2>
+  {% if notice_message %}
+    <article class="primary">{{ notice_message }}</article>
+  {% endif %}
+  {% if error_message %}
+    <article class="secondary">{{ error_message }}</article>
+  {% endif %}
   <p class="muted">Колонки — даты, строки — сотрудники. Часы показывают суммарную работу за день. Буквы: Б — больничный, ОП — отпуск, У — удалёнка, К — командировка, О — отгул, АО — адм. отпуск.</p>
   <div class="grid-table team">
     <div class="header cell">Сотрудник</div>
