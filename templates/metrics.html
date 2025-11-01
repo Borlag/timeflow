@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% block content_class %} content--wide metrics-page{% endblock %}
 {% block content %}
   <header class="page-header">
     <div>
@@ -32,15 +33,120 @@
   </section>
   <script>
     async function draw() {
+      const root = document.documentElement;
+      const isDark = root.getAttribute('data-theme') === 'dark';
+      const styles = getComputedStyle(root);
+      const readVar = (name, fallback) => {
+        const value = styles.getPropertyValue(name);
+        return value && value.trim() ? value.trim() : fallback;
+      };
+      const textColor = readVar('--pico-color', isDark ? '#e2e8f0' : '#1f2933');
+      const gridColor = readVar('--pico-muted-border-color', isDark ? 'rgba(148, 163, 184, 0.35)' : 'rgba(100, 116, 139, 0.3)');
+      const tooltipBg = readVar('--pico-card-background-color', isDark ? '#0f172a' : '#ffffff');
+      const primary = readVar('--pico-primary', isDark ? '#60a5fa' : '#2563eb');
+      const secondary = readVar('--pico-secondary', isDark ? '#fbbf24' : '#f97316');
+      const tertiary = isDark ? '#f472b6' : '#059669';
+      const quaternary = isDark ? '#34d399' : '#7c3aed';
+      const palette = [primary, secondary, tertiary, quaternary];
+      const withAlpha = (hex, alpha = 0.85) => {
+        const normalized = hex.trim();
+        if (!normalized.startsWith('#') || (normalized.length !== 7 && normalized.length !== 4)) {
+          return normalized;
+        }
+        const expand = normalized.length === 4
+          ? `#${normalized[1]}${normalized[1]}${normalized[2]}${normalized[2]}${normalized[3]}${normalized[3]}`
+          : normalized;
+        const bigint = parseInt(expand.slice(1), 16);
+        const r = (bigint >> 16) & 255;
+        const g = (bigint >> 8) & 255;
+        const b = bigint & 255;
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+      };
+
+      const baseOptions = ({ stacked = false, maxTicks = 8 } = {}) => ({
+        responsive: true,
+        resizeDelay: 120,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        layout: { padding: { top: 16, right: 20, bottom: 12, left: 20 } },
+        plugins: {
+          legend: {
+            display: true,
+            position: 'top',
+            align: 'start',
+            labels: {
+              usePointStyle: true,
+              boxWidth: 12,
+              padding: 16,
+              color: textColor,
+              font: { size: 13 }
+            }
+          },
+          tooltip: {
+            padding: 12,
+            bodySpacing: 6,
+            backgroundColor: tooltipBg,
+            titleColor: textColor,
+            bodyColor: textColor,
+            borderColor: gridColor,
+            borderWidth: 1,
+            displayColors: true
+          }
+        },
+        scales: {
+          x: {
+            stacked,
+            grid: { display: false },
+            ticks: {
+              color: textColor,
+              font: { size: 12 },
+              maxRotation: 0,
+              autoSkip: true,
+              maxTicksLimit: maxTicks
+            }
+          },
+          y: {
+            stacked,
+            beginAtZero: true,
+            grid: { color: gridColor },
+            ticks: {
+              color: textColor,
+              font: { size: 12 },
+              precision: 0
+            }
+          }
+        }
+      });
+
+      const commonDataset = {
+        borderRadius: 6,
+        maxBarThickness: 42,
+        categoryPercentage: 0.64,
+        barPercentage: 0.82
+      };
+
+      const makeDataset = (index, overrides) => {
+        const color = palette[index % palette.length];
+        return {
+          ...commonDataset,
+          backgroundColor: withAlpha(color, 0.88),
+          hoverBackgroundColor: withAlpha(color, 0.96),
+          borderColor: color,
+          borderWidth: 1,
+          ...overrides
+        };
+      };
+
       const u = await (await fetch('/api/metrics/utilization')).json();
       const ctx1 = document.getElementById('c1');
       new Chart(ctx1, {
         type: 'bar',
-        data: { labels: u.labels,
+        data: {
+          labels: u.labels,
           datasets: [
-            { label: 'Проектные часы', data: u.project_hours, stack: 's' },
-            { label: 'Непроектные часы', data: u.nonproject_hours, stack: 's' },
-            { label: 'Отсутствия', data: u.leave_hours, stack: 's' },
+            makeDataset(0, { label: 'Проектные часы', data: u.project_hours, stack: 'util' }),
+            makeDataset(1, { label: 'Непроектные часы', data: u.nonproject_hours, stack: 'util' }),
+            makeDataset(2, { label: 'Отсутствия', data: u.leave_hours, stack: 'util' })
           ]
         },
         options: {
@@ -66,10 +172,11 @@
       const ctx2 = document.getElementById('c2');
       new Chart(ctx2, {
         type: 'bar',
-        data: { labels: p.labels,
+        data: {
+          labels: p.labels,
           datasets: [
-            { label: 'План', data: p.planned_hours },
-            { label: 'Факт', data: p.actual_hours },
+            makeDataset(0, { label: 'План', data: p.planned_hours }),
+            makeDataset(3, { label: 'Факт', data: p.actual_hours })
           ]
         },
         options: {
