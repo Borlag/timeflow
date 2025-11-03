@@ -6,6 +6,12 @@
       <h1>Метрики отдела</h1>
       <p class="muted">Актуальные данные за последние недели</p>
     </div>
+    <!-- Переключатель периода -->
+    <nav class="segmented" id="metrics-range" aria-label="Период">
+      <a href="#" data-days="14">14 дн</a>
+      <a href="#" data-days="28" class="active">28 дн</a>
+      <a href="#" data-days="90">90 дн</a>
+    </nav>
   </header>
 
   <section class="metrics-grid">
@@ -32,7 +38,9 @@
     </article>
   </section>
   <script>
-    async function draw() {
+    let charts = [];
+    function destroyCharts() { charts.forEach(c => { try { c.destroy(); } catch(_){} }); charts = []; }
+    async function draw(days = 28) {
       const root = document.documentElement;
       const isDark = root.getAttribute('data-theme') === 'dark';
       const styles = getComputedStyle(root);
@@ -137,9 +145,9 @@
         };
       };
 
-      const u = await (await fetch('/api/metrics/utilization')).json();
+      const u = await (await fetch(`/api/metrics/utilization?days=${days}`)).json();
       const ctx1 = document.getElementById('c1');
-      new Chart(ctx1, {
+      charts.push(new Chart(ctx1, {
         type: 'bar',
         data: {
           labels: u.labels,
@@ -166,11 +174,17 @@
             y: { stacked: true }
           }
         }
-      });
+      }));
+      // KPI: средний проектный utilization за период
+      const sum = arr => (arr||[]).reduce((a,b)=>a+(+b||0),0);
+      const proj = sum(u.project_hours), nonproj = sum(u.nonproject_hours), leave = sum(u.leave_hours);
+      const util = (proj / Math.max(1, proj + nonproj + leave) * 100).toFixed(1);
+      const kpi = document.getElementById('kpi-util');
+      if (kpi) kpi.textContent = `Средний project utilization: ${util}% (проектные / все часы)`;
 
-      const p = await (await fetch('/api/metrics/project_load')).json();
+      const p = await (await fetch(`/api/metrics/project_load?days=${days}`)).json();
       const ctx2 = document.getElementById('c2');
-      new Chart(ctx2, {
+      charts.push(new Chart(ctx2, {
         type: 'bar',
         data: {
           labels: p.labels,
@@ -195,11 +209,11 @@
             x: { ticks: { maxRotation: 0, autoSkip: false } }
           }
         }
-      });
+      }));
 
-      const d = await (await fetch('/api/metrics/department_workload')).json();
+      const d = await (await fetch(`/api/metrics/department_workload?days=${days}`)).json();
       const ctx3 = document.getElementById('c3');
-      new Chart(ctx3, {
+      charts.push(new Chart(ctx3, {
         type: 'bar',
         data: { labels: d.labels, datasets: [{ label: 'Часы', data: d.hours }] },
         options: {
@@ -218,8 +232,20 @@
             x: { ticks: { maxRotation: 0, autoSkip: false } }
           }
         }
-      });
+      }));
     }
-    draw();
+    function bindRange() {
+      const links = document.querySelectorAll('#metrics-range a');
+      links.forEach(a => a.addEventListener('click', (e) => {
+        e.preventDefault();
+        links.forEach(x => x.classList.remove('active'));
+        a.classList.add('active');
+        const days = parseInt(a.dataset.days, 10) || 28;
+        destroyCharts();
+        draw(days);
+      }));
+    }
+    bindRange();
+    draw(28);
   </script>
 {% endblock %}

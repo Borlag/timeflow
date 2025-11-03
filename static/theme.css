@@ -5,6 +5,8 @@
   --pico-border-radius: 12px;
   --content-max-width: 1200px;
   --content-gutter: clamp(1rem, 2.2vw + 0.5rem, 3rem);
+  /* Высота графиков: адаптивная, но ограниченная, чтобы не было «расползания» */
+  --chart-h: clamp(260px, 38vh, 520px);
   --tf-critical: hsl(0 75% 45%);
   --tf-badge-green-bg: hsl(148 58% 88%);
   --tf-badge-green-fg: hsl(148 45% 24%);
@@ -358,7 +360,7 @@
 
 .chart-card canvas {
   width: 100% !important;
-  height: 100% !important;
+  height: var(--chart-h) !important; /* фикс вместо 100% */
   display: block;
 }
 

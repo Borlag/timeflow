@@ -818,19 +818,25 @@ def api_utilization(db: Session = Depends(get_db), user: User = Depends(require_
 
 
 @app.get("/api/metrics/project_load")
-def api_project_load(db: Session = Depends(get_db), user: User = Depends(require_roles(Role.manager, Role.admin))):
+def api_project_load(db: Session = Depends(get_db), user: User = Depends(require_roles(Role.manager, Role.admin)),
+                     days: int | None = None):
     # Planned vs logged per project (including project-level entries)
+    filters = [Project.status == "active", TimeEntry.approved == True]  # noqa: E712
+    if days and days > 0:
+        end = dt.date.today()
+        start = end - dt.timedelta(days=days)
+        filters += [TimeEntry.date >= start, TimeEntry.date <= end]
     # 1) by tasks
     q1 = select(Project.id, Project.code, func.coalesce(func.sum(TimeEntry.hours), 0.0))\
         .join(Task, Task.project_id == Project.id, isouter=True)\
         .join(TimeEntry, TimeEntry.task_id == Task.id, isouter=True)\
-        .where(Project.status == "active", TimeEntry.approved == True)\
+        .where(*filters)\
         .group_by(Project.id, Project.code)
     logged = {pid: hours for pid, code, hours in db.execute(q1)}
     # 2) direct project entries
     q2 = select(Project.id, func.coalesce(func.sum(TimeEntry.hours), 0.0))\
         .join(TimeEntry, TimeEntry.project_id == Project.id)\
-        .where(Project.status == "active", TimeEntry.approved == True)\
+        .where(*filters)\
         .group_by(Project.id)
     for pid, h in db.execute(q2):
         logged[pid] = (logged.get(pid, 0.0) + (h or 0.0))
