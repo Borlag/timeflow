@@ -244,19 +244,16 @@
   padding: 0 .5rem;
 }
 
-
 .table-wrapper table {
-  width: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
+  width: max-content;
+  min-width: 100%;
   margin-bottom: 0;
 }
 
 .table-wrapper th,
 .table-wrapper td {
-  white-space: normal;
+  white-space: nowrap;
   vertical-align: top;
-  line-height: 1.4;
 }
 
 .table-wrapper td:first-child {
@@ -275,38 +272,6 @@
   gap: .5rem;
   align-items: center;
   flex-wrap: wrap;
-}
-
-form.grid {
-  display: grid;
-  gap: 1rem;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  align-items: start;
-}
-
-form.grid > * {
-  min-width: 0;
-}
-
-form.grid label {
-  display: flex;
-  flex-direction: column;
-  gap: .35rem;
-}
-
-form.grid label > :is(input, select, textarea) {
-  width: 100%;
-}
-
-form.grid textarea {
-  min-height: 120px;
-  resize: vertical;
-}
-
-form.grid > button {
-  align-self: start;
-  justify-self: start;
-  min-width: 140px;
 }
 
 .reset-form {
