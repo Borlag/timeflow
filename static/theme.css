@@ -277,47 +277,16 @@
 
 .table-wrapper td .badge { white-space: nowrap; }
 
-.timesheet-card {
-  padding-top: .85rem;
-  padding-bottom: .95rem;
-}
-
-.timesheet-card header {
-  margin-bottom: .5rem;
-}
-
 .timesheet-card__actions {
   display: flex;
   flex-wrap: wrap;
   gap: .5rem;
   margin: .85rem 0;
-  flex-direction: row;
 }
 
 .timesheet-card__actions a {
   min-width: 160px;
   text-align: center;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: .35rem;
-  padding: .5rem 1.05rem;
-  border-radius: var(--pico-border-radius);
-  text-decoration: none;
-  font-weight: 600;
-  border: 1px solid var(--pico-primary);
-  border: 1px solid color-mix(in hsl, var(--pico-primary), transparent 35%);
-  background: var(--pico-primary);
-  color: var(--pico-primary-inverse);
-  transition: background-color .15s ease, border-color .15s ease, color .15s ease;
-}
-
-.timesheet-card__actions a:hover,
-.timesheet-card__actions a:focus-visible {
-  border-color: var(--pico-primary);
-  border-color: color-mix(in hsl, var(--pico-primary), transparent 15%);
-  background: color-mix(in hsl, var(--pico-primary), white 12%);
-  color: var(--pico-primary-inverse);
 }
 
 .tasks-card .table-wrapper {
@@ -326,7 +295,7 @@
 
 .tasks-card .task-actions {
   white-space: normal;
-  min-width: 12rem;
+  min-width: 16rem;
 }
 
 .tasks-card details {
