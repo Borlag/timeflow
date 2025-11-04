@@ -277,15 +277,6 @@
 
 .table-wrapper td .badge { white-space: nowrap; }
 
-.timesheet-card {
-  padding-top: .85rem;
-  padding-bottom: .95rem;
-}
-
-.timesheet-card header {
-  margin-bottom: .5rem;
-}
-
 .timesheet-card__actions {
   display: flex;
   flex-wrap: wrap;
@@ -304,7 +295,7 @@
 
 .tasks-card .task-actions {
   white-space: normal;
-  min-width: 12rem;
+  min-width: 16rem;
 }
 
 .tasks-card details {
