@@ -98,6 +98,11 @@ class Project(Base):
     members: Mapped[list["ProjectMember"]] = relationship(
         backref="project", cascade="all, delete-orphan"
     )
+    task_links: Mapped[list["ProjectTaskLink"]] = relationship(
+        "ProjectTaskLink",
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
 
 class Task(Base):
     __tablename__ = "tasks"
@@ -127,6 +132,17 @@ class Task(Base):
     comments: Mapped[list["TaskComment"]] = relationship(back_populates="task")
     time_entries: Mapped[list["TimeEntry"]] = relationship(back_populates="task")
     approved: Mapped[bool] = mapped_column(Boolean, default=True)
+    collaborators: Mapped[list["TaskCollaborator"]] = relationship(
+        "TaskCollaborator",
+        back_populates="task",
+        cascade="all, delete-orphan",
+    )
+    status_logs: Mapped[list["TaskStatusLog"]] = relationship(
+        "TaskStatusLog",
+        back_populates="task",
+        cascade="all, delete-orphan",
+        order_by="TaskStatusLog.created_at",
+    )
 
 class TaskComment(Base):
     __tablename__ = "task_comments"
@@ -138,6 +154,51 @@ class TaskComment(Base):
 
     task: Mapped["Task"] = relationship(back_populates="comments")
     author: Mapped["User"] = relationship()
+
+class TaskStatusLog(Base):
+    __tablename__ = "task_status_logs"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id"))
+    author_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    from_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    to_status: Mapped[str] = mapped_column(String(50))
+    percent_complete: Mapped[int] = mapped_column(Integer, default=0)
+    note: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+
+    task: Mapped["Task"] = relationship(back_populates="status_logs")
+    author: Mapped["User"] = relationship()
+
+class TaskCollaborator(Base):
+    __tablename__ = "task_collaborators"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    added_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+
+    task: Mapped["Task"] = relationship(back_populates="collaborators", foreign_keys=[task_id])
+    user: Mapped["User"] = relationship(foreign_keys=[user_id])
+    added_by: Mapped["User"] = relationship(foreign_keys=[added_by_id])
+
+    __table_args__ = (
+        UniqueConstraint("task_id", "user_id", name="uq_task_collaborator"),
+    )
+
+class ProjectTaskLink(Base):
+    __tablename__ = "project_task_links"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id"))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+
+    project: Mapped["Project"] = relationship("Project", back_populates="task_links")
+    task: Mapped["Task"] = relationship("Task")
+
+    __table_args__ = (
+        UniqueConstraint("project_id", "task_id", name="uq_project_task_link"),
+    )
 
 class TimeEntry(Base):
     __tablename__ = "time_entries"
