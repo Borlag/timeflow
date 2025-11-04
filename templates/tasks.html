@@ -36,7 +36,7 @@
       <select name="project_filter">
         <option value="">Любой</option>
         {% for p in projects %}
-          <option value="{{ p.id }}" {% if project_filter_id == p.id %}selected{% endif %}>{{ p.code }} — {{ p.name }}</option>
+          <option value="{{ p.id }}" {% if project_filter and project_filter|int == p.id %}selected{% endif %}>{{ p.code }} — {{ p.name }}</option>
         {% endfor %}
       </select>
     </label>
@@ -45,7 +45,7 @@
       <select name="assignee_filter">
         <option value="">Любой</option>
         {% for u in users %}
-          <option value="{{ u.id }}" {% if assignee_filter_id == u.id %}selected{% endif %}>{{ u.full_name }}</option>
+          <option value="{{ u.id }}" {% if assignee_filter and assignee_filter|int == u.id %}selected{% endif %}>{{ u.full_name }}</option>
         {% endfor %}
       </select>
     </label>
@@ -54,7 +54,7 @@
       <select name="collaborator_filter">
         <option value="">Любой</option>
         {% for u in users %}
-          <option value="{{ u.id }}" {% if collaborator_filter_id == u.id %}selected{% endif %}>{{ u.full_name }}</option>
+          <option value="{{ u.id }}" {% if collaborator_filter and collaborator_filter|int == u.id %}selected{% endif %}>{{ u.full_name }}</option>
         {% endfor %}
       </select>
     </label>
@@ -89,17 +89,13 @@
   {% endif %}
 
   <div class="table-wrapper sticky-table {% if tasks|length > 12 %}stick{% endif %}">
-    <table class="tasks-table">
+    <table>
       <thead>
         <tr>
           <th scope="col" class="col-action" aria-label="История"></th>
           <th scope="col">Задача</th>
-          <th scope="col">Проект</th>
           <th scope="col">Статус</th>
-          <th scope="col">Прогресс</th>
-          <th scope="col">Приоритет</th>
-          <th scope="col">Дата начала</th>
-          <th scope="col">Дата завершения</th>
+          <th scope="col">Сроки</th>
           <th scope="col">Исполнитель</th>
           <th scope="col">Соисполнители</th>
           <th scope="col">Активность</th>
@@ -111,45 +107,30 @@
         {% set meta = task_meta.get(t.id) %}
         <tr>
           <td class="cell-history">
-            <button
-              type="button"
-              class="timeline-btn timeline-trigger"
-              hx-get="/tasks/{{ t.id }}/timeline"
-              hx-target="#task-timeline-body"
-              hx-swap="innerHTML"
-              hx-trigger="click"
-              title="История и комментарии"
-              aria-label="Открыть историю задачи"
-            >
+            <button type="button" class="timeline-btn" hx-get="/tasks/{{ t.id }}/timeline" hx-target="#task-timeline-body" hx-swap="innerHTML" hx-on::after-swap="window.TimeflowTaskModal.open()" aria-label="Открыть историю задачи">
               🕘
             </button>
           </td>
           <td class="cell-main">
             <div class="task-title">{{ t.title }}</div>
             {% if t.description %}<p class="task-desc">{{ t.description }}</p>{% endif %}
-          </td>
-          <td class="cell-project">
-            {% if t.project %}
-              <span class="project-code">{{ t.project.code }}</span>
-              <small class="muted">{{ t.project.name }}</small>
-            {% else %}
-              <span class="muted">Без проекта</span>
-            {% endif %}
+            <div class="task-meta-line">
+              {% if t.project %}<span class="pill pill--project">{{ t.project.code }}</span>{% else %}<span class="pill pill--project pill--empty">Без проекта</span>{% endif %}
+              <span class="pill pill--priority priority-{{ t.priority|enum_value }}">{{ t.priority|priority_label }}</span>
+            </div>
           </td>
           <td class="cell-status">
             <span class="badge status-{{ t.status|enum_value }}">{{ t.status|status_label }}</span>
+            <small class="muted">Прогресс {{ t.percent_complete }}%</small>
           </td>
-          <td class="cell-progress">
-            <div class="progress-line">
-              <div class="progress-line__bar"><span style="width: {{ t.percent_complete }}%"></span></div>
-              <small>{{ t.percent_complete }}%</small>
-            </div>
+          <td class="cell-dates">
+            {% if t.due_date %}
+              <strong>{{ t.due_date }}</strong>
+            {% else %}
+              <span class="muted">без срока</span>
+            {% endif %}
+            {% if t.start_date %}<small class="muted">старт {{ t.start_date }}</small>{% endif %}
           </td>
-          <td class="cell-priority">
-            <span class="pill pill--priority priority-{{ t.priority|enum_value }}">{{ t.priority|priority_label }}</span>
-          </td>
-          <td class="cell-date">{{ t.start_date.strftime('%d.%m.%Y') if t.start_date else '—' }}</td>
-          <td class="cell-date">{{ t.due_date.strftime('%d.%m.%Y') if t.due_date else '—' }}</td>
           <td class="cell-assignee">
             <strong>{{ t.assignee.full_name }}</strong>
           </td>
@@ -172,20 +153,9 @@
           </td>
           <td class="cell-activity">
             {% if meta %}
-              <button
-                type="button"
-                class="activity-btn timeline-trigger"
-                hx-get="/tasks/{{ t.id }}/timeline"
-                hx-target="#task-timeline-body"
-                hx-swap="innerHTML"
-                hx-trigger="click"
-                title="Показать комментарии"
-                aria-label="Открыть комментарии и историю"
-              >
-                💬 <span>{{ meta['comment_count'] }}</span>
-              </button>
+              <span class="activity-chip">💬 {{ meta['comment_count'] }}</span>
               {% set last = meta['last_activity'] %}
-              {% if last %}<small class="muted">Обновлено {{ last.strftime('%d.%m %H:%M') }}</small>{% endif %}
+              <small class="muted">Обновлено {{ last.strftime('%d.%m %H:%M') }}</small>
             {% else %}
               <span class="muted">—</span>
             {% endif %}
@@ -236,17 +206,15 @@
         {% for u in users %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}
       </select>
     </label>
-    <label class="col-span-6"><span>Соисполнители</span>
+    <label><span>Соисполнители</span>
       <select name="collaborator_ids" multiple size="4">
         {% for u in users %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}
       </select>
       <small class="muted">Добавленные соисполнители увидят задачу после одобрения руководителя или администратора.</small>
     </label>
-    <label class="col-span-3"><span>Начало</span><input type="date" name="start_date"></label>
-    <label class="col-span-3"><span>Срок</span><input type="date" name="due_date"></label>
-    <div class="col-span-12 form-actions">
-      <button type="submit" class="primary">Создать</button>
-    </div>
+    <label><span>Начало</span><input type="date" name="start_date"></label>
+    <label><span>Срок</span><input type="date" name="due_date"></label>
+    <button type="submit" class="primary">Создать</button>
   </form>
   <p class="muted">Если задачу создаёт сотрудник, она появится со статусом «на согласовании» до одобрения менеджером или администратором.</p>
 
@@ -262,17 +230,6 @@
           if(event.target === dialog){ window.TimeflowTaskModal.close(); }
         });
       }
-      document.addEventListener('click', (event)=>{
-        const trigger = event.target.closest('.timeline-trigger');
-        if(trigger){
-          window.TimeflowTaskModal.open();
-        }
-      });
-      document.body.addEventListener('htmx:afterSwap', (event)=>{
-        if(event.target && event.target.id === 'task-timeline-body'){
-          window.TimeflowTaskModal.open();
-        }
-      });
     })();
   </script>
 
@@ -282,24 +239,13 @@
       grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));
       gap:1rem;
       margin:1.2rem 0 1.5rem;
-      align-items:start;
+      align-items:end;
     }
     .tasks-filter-panel__field span{ font-size:.85rem; font-weight:500; }
     .tasks-filter-panel__actions{ display:flex; gap:.75rem; align-items:center; }
     .filter-summary{ display:flex; flex-wrap:wrap; gap:.5rem; margin-bottom:1rem; }
     .chip{ display:inline-flex; align-items:center; gap:.4rem; border-radius:999px; padding:.25rem .8rem; background:var(--pico-muted-color,#d6d6d6); color:var(--pico-color,#111); font-size:.85rem; }
-    .table-wrapper table{ min-width:1400px; }
-    .tasks-table th:first-child,
-    .tasks-table td:first-child{
-      min-width:auto;
-      width:60px;
-      white-space:nowrap;
-    }
-    .tasks-table th:nth-child(2),
-    .tasks-table td:nth-child(2){
-      white-space:normal;
-      min-width:22rem;
-    }
+    .table-wrapper table{ min-width:1200px; }
     .col-action{ width:54px; text-align:center; }
     .cell-history{ text-align:center; }
     .timeline-btn{
@@ -312,36 +258,22 @@
       transition:background .2s ease, transform .2s ease;
     }
     .timeline-btn:hover{ background:var(--pico-primary-background); color:var(--pico-primary-inverse); transform:translateY(-1px); }
-    .timeline-trigger{ cursor:pointer; }
-    .cell-main{ min-width:20rem; }
+    .cell-main{ min-width:24rem; }
     .task-title{ font-weight:600; font-size:1.05rem; }
     .task-desc{ margin:.35rem 0 0; color:var(--pico-muted-color); font-size:.9rem; }
-    .project-code{ font-weight:600; display:block; }
+    .task-meta-line{ margin-top:.5rem; display:flex; gap:.4rem; flex-wrap:wrap; }
     .pill{ display:inline-flex; align-items:center; gap:.35rem; border-radius:999px; padding:.2rem .75rem; background:var(--pico-muted-color,#d9d9d9); color:var(--pico-color,#111); font-size:.8rem; font-weight:500; }
+    .pill--project{ background:var(--pico-secondary-background); color:var(--pico-secondary-inverse); }
+    .pill--project.pill--empty{ opacity:.6; }
     .pill--priority{ text-transform:lowercase; }
     .priority-critical{ background:var(--pico-danger-background); color:var(--pico-danger-inverse); }
     .priority-high{ background:var(--pico-warning-background); color:var(--pico-warning-inverse); }
     .priority-medium{ background:var(--pico-secondary-background); color:var(--pico-secondary-inverse); }
     .priority-low{ background:var(--pico-muted-border-color); color:var(--pico-color); }
     .pill--pending{ background:var(--pico-warning-background); color:var(--pico-warning-inverse); }
-    .cell-activity small{ display:block; margin-top:.35rem; }
-    .cell-date{ white-space:nowrap; }
-    .cell-progress .progress-line{ display:flex; align-items:center; gap:.5rem; }
-    .progress-line__bar{ flex:1; background:var(--pico-muted-border-color); border-radius:999px; overflow:hidden; height:6px; }
-    .progress-line__bar span{ display:block; height:100%; background:var(--pico-primary-background,#4a7cff); }
-    .activity-btn{
-      border-radius:999px;
-      border:1px solid transparent;
-      background:var(--pico-primary-background);
-      color:var(--pico-primary-inverse);
-      display:inline-flex;
-      align-items:center;
-      gap:.4rem;
-      padding:.25rem .8rem;
-      font-size:.85rem;
-      transition:transform .2s ease, box-shadow .2s ease;
-    }
-    .activity-btn:hover{ transform:translateY(-1px); box-shadow:0 4px 10px rgba(0,0,0,.12); }
+    .activity-chip{ display:inline-flex; align-items:center; gap:.35rem; border-radius:999px; padding:.2rem .7rem; background:var(--pico-primary-background); color:var(--pico-primary-inverse); font-size:.8rem; }
+    .cell-activity small{ display:block; margin-top:.25rem; }
+    .cell-dates strong{ display:block; }
     .task-timeline-modal::backdrop{ backdrop-filter:blur(2px); background:rgba(0,0,0,.35); }
     .timeline-modal-body{ min-width:min(640px, 90vw); max-height:80vh; overflow-y:auto; }
     .timeline-modal-body__header{ display:flex; justify-content:space-between; align-items:center; gap:1rem; }
@@ -360,18 +292,14 @@
     .create-task-form .form-actions{ display:flex; justify-content:flex-start; }
     .create-task-form .form-actions button{
       height:44px;
-      display:inline-flex;
-      align-items:center;
-      justify-content:center;
-      padding-inline:1.8rem;
+      display:flex; align-items:center; justify-content:center;
+      width:max-content;
+      justify-self:start;
+      padding-inline:1.2rem;
     }
-    @media (max-width: 1200px){
-      .table-wrapper table{ min-width:1200px; }
-    }
+    .create-task-form select[multiple]{ height:120px; }
     @media (max-width: 1100px){
-      .create-task-form .col-span-6{ grid-column:span 12; }
-      .create-task-form .col-span-3{ grid-column:span 6; }
-      .create-task-form{ grid-template-columns:repeat(6, minmax(0, 1fr)); }
+      .create-task-form{ grid-template-columns:repeat(2,1fr); }
       .tasks-filter-panel{ grid-template-columns:repeat(2, minmax(200px,1fr)); }
     }
     @media (max-width: 760px){
@@ -379,9 +307,6 @@
     }
     @media (max-width: 700px){
       .create-task-form{ grid-template-columns:1fr; }
-      .create-task-form .col-span-3,
-      .create-task-form .col-span-6,
-      .create-task-form .col-span-12{ grid-column:span 1; }
       .tasks-filter-panel{ grid-template-columns:1fr; }
     }
   </style>

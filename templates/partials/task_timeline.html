@@ -12,8 +12,7 @@
       <span class="badge status-{{ task.status|enum_value }}">{{ task.status|status_label }}</span>
       <span class="pill pill--priority priority-{{ task.priority|enum_value }}">{{ task.priority|priority_label }}</span>
       <span class="pill pill--progress">Прогресс {{ task.percent_complete }}%</span>
-      {% if task.start_date %}<span class="pill pill--due">Начало {{ task.start_date.strftime('%d.%m.%Y') }}</span>{% endif %}
-      {% if task.due_date %}<span class="pill pill--due">Срок до {{ task.due_date.strftime('%d.%m.%Y') }}</span>{% endif %}
+      {% if task.due_date %}<span class="pill pill--due">Срок до {{ task.due_date }}</span>{% endif %}
     </div>
     {% if task.description %}<p class="timeline-description">{{ task.description }}</p>{% endif %}
   </section>
