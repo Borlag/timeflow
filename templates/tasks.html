@@ -94,8 +94,12 @@
         <tr>
           <th scope="col" class="col-action" aria-label="История"></th>
           <th scope="col">Задача</th>
+          <th scope="col">Проект</th>
+          <th scope="col">Приоритет</th>
           <th scope="col">Статус</th>
-          <th scope="col">Сроки</th>
+          <th scope="col">Прогресс</th>
+          <th scope="col">Дата начала</th>
+          <th scope="col">Дата завершения</th>
           <th scope="col">Исполнитель</th>
           <th scope="col">Соисполнители</th>
           <th scope="col">Активность</th>
@@ -107,29 +111,53 @@
         {% set meta = task_meta.get(t.id) %}
         <tr>
           <td class="cell-history">
-            <button type="button" class="timeline-btn" hx-get="/tasks/{{ t.id }}/timeline" hx-target="#task-timeline-body" hx-swap="innerHTML" hx-on::after-swap="window.TimeflowTaskModal.open()" aria-label="Открыть историю задачи">
+            <button
+              type="button"
+              class="timeline-btn"
+              hx-get="/tasks/{{ t.id }}/timeline"
+              hx-target="#task-timeline-body"
+              hx-swap="innerHTML"
+              data-task-timeline-trigger
+              data-focus="history"
+              aria-label="Открыть историю задачи"
+            >
               🕘
             </button>
           </td>
           <td class="cell-main">
             <div class="task-title">{{ t.title }}</div>
             {% if t.description %}<p class="task-desc">{{ t.description }}</p>{% endif %}
-            <div class="task-meta-line">
-              {% if t.project %}<span class="pill pill--project">{{ t.project.code }}</span>{% else %}<span class="pill pill--project pill--empty">Без проекта</span>{% endif %}
-              <span class="pill pill--priority priority-{{ t.priority|enum_value }}">{{ t.priority|priority_label }}</span>
-            </div>
+          </td>
+          <td class="cell-project">
+            {% if t.project %}
+              <span class="pill pill--project">{{ t.project.code }}</span>
+              <small class="muted">{{ t.project.name }}</small>
+            {% else %}
+              <span class="muted">Без проекта</span>
+            {% endif %}
+          </td>
+          <td class="cell-priority">
+            <span class="pill pill--priority priority-{{ t.priority|enum_value }}">{{ t.priority|priority_label }}</span>
           </td>
           <td class="cell-status">
             <span class="badge status-{{ t.status|enum_value }}">{{ t.status|status_label }}</span>
-            <small class="muted">Прогресс {{ t.percent_complete }}%</small>
           </td>
-          <td class="cell-dates">
+          <td class="cell-progress">
+            <span class="progress-value">{{ t.percent_complete }}%</span>
+          </td>
+          <td class="cell-start">
+            {% if t.start_date %}
+              <strong>{{ t.start_date }}</strong>
+            {% else %}
+              <span class="muted">—</span>
+            {% endif %}
+          </td>
+          <td class="cell-due">
             {% if t.due_date %}
               <strong>{{ t.due_date }}</strong>
             {% else %}
-              <span class="muted">без срока</span>
+              <span class="muted">—</span>
             {% endif %}
-            {% if t.start_date %}<small class="muted">старт {{ t.start_date }}</small>{% endif %}
           </td>
           <td class="cell-assignee">
             <strong>{{ t.assignee.full_name }}</strong>
@@ -153,7 +181,18 @@
           </td>
           <td class="cell-activity">
             {% if meta %}
-              <span class="activity-chip">💬 {{ meta['comment_count'] }}</span>
+              <button
+                type="button"
+                class="activity-chip"
+                hx-get="/tasks/{{ t.id }}/timeline"
+                hx-target="#task-timeline-body"
+                hx-swap="innerHTML"
+                data-task-timeline-trigger
+                data-focus="comments"
+                aria-label="Показать комментарии к задаче «{{ t.title }}»"
+              >
+                💬 {{ meta['comment_count'] }}
+              </button>
               {% set last = meta['last_activity'] %}
               <small class="muted">Обновлено {{ last.strftime('%d.%m %H:%M') }}</small>
             {% else %}
@@ -221,15 +260,92 @@
   <script>
     (function(){
       const dialog = document.getElementById('task-timeline-modal');
+      const bodyEl = document.getElementById('task-timeline-body');
+      const defaultBodyContent = bodyEl ? bodyEl.innerHTML : '';
+
+      function ensureOpen(){
+        if (dialog && !dialog.open) {
+          dialog.showModal();
+        }
+      }
+
+      function setBody(html){
+        if (bodyEl) {
+          bodyEl.innerHTML = html;
+        }
+      }
+
+      function renderError(status){
+        const codeText = status ? ` (код ${status})` : '';
+        setBody(`
+          <header class="timeline-modal-body__header">
+            <strong>Не удалось загрузить историю</strong>
+          </header>
+          <p class="muted">Попробуйте повторить попытку позже${codeText}.</p>
+        `);
+        ensureOpen();
+      }
+
       window.TimeflowTaskModal = {
-        open(){ if(dialog && !dialog.open){ dialog.showModal(); } },
-        close(){ if(dialog && dialog.open){ dialog.close(); } }
+        pendingFocus: null,
+        open: ensureOpen,
+        ensureOpen,
+        close(){ if(dialog && dialog.open){ dialog.close(); } },
+        showLoading(){ setBody(defaultBodyContent); },
+        showError(status){ renderError(status); },
+        focusSection(section){
+          if(!bodyEl || !section){ return; }
+          const target = bodyEl.querySelector(`[data-timeline-section="${section}"]`);
+          if(target){
+            if(!target.hasAttribute('tabindex')){
+              target.setAttribute('tabindex', '-1');
+              target.dataset.timelineTempFocus = '1';
+            }
+            target.focus({ preventScroll: true });
+            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            if(target.dataset.timelineTempFocus){
+              target.addEventListener('blur', ()=>{
+                target.removeAttribute('tabindex');
+                delete target.dataset.timelineTempFocus;
+              }, { once: true });
+            }
+          }
+        }
       };
+
       if(dialog){
         dialog.addEventListener('click', (event)=>{
           if(event.target === dialog){ window.TimeflowTaskModal.close(); }
         });
       }
+
+      document.body.addEventListener('htmx:beforeRequest', (event)=>{
+        const trigger = event.detail && event.detail.elt;
+        if(trigger && trigger.hasAttribute('data-task-timeline-trigger')){
+          window.TimeflowTaskModal.pendingFocus = trigger.getAttribute('data-focus');
+          window.TimeflowTaskModal.showLoading();
+          window.TimeflowTaskModal.open();
+        }
+      });
+
+      document.body.addEventListener('htmx:afterSwap', (event)=>{
+        if(event.detail && event.detail.target && event.detail.target.id === 'task-timeline-body'){
+          window.TimeflowTaskModal.ensureOpen();
+          if(window.TimeflowTaskModal.pendingFocus){
+            window.TimeflowTaskModal.focusSection(window.TimeflowTaskModal.pendingFocus);
+            window.TimeflowTaskModal.pendingFocus = null;
+          }
+        }
+      });
+
+      document.body.addEventListener('htmx:responseError', (event)=>{
+        const trigger = event.detail && event.detail.elt;
+        if(trigger && trigger.hasAttribute('data-task-timeline-trigger')){
+          const status = event.detail && event.detail.xhr ? event.detail.xhr.status : undefined;
+          window.TimeflowTaskModal.pendingFocus = null;
+          window.TimeflowTaskModal.showError(status);
+        }
+      });
     })();
   </script>
 
@@ -245,9 +361,9 @@
     .tasks-filter-panel__actions{ display:flex; gap:.75rem; align-items:center; }
     .filter-summary{ display:flex; flex-wrap:wrap; gap:.5rem; margin-bottom:1rem; }
     .chip{ display:inline-flex; align-items:center; gap:.4rem; border-radius:999px; padding:.25rem .8rem; background:var(--pico-muted-color,#d6d6d6); color:var(--pico-color,#111); font-size:.85rem; }
-    .table-wrapper table{ min-width:1200px; }
+    .table-wrapper table{ min-width:1300px; }
     .col-action{ width:54px; text-align:center; }
-    .cell-history{ text-align:center; }
+    .cell-history{ text-align:center; vertical-align:top; }
     .timeline-btn{
       border-radius:999px;
       border:1px solid var(--pico-primary-border-color, var(--pico-color));
@@ -258,22 +374,31 @@
       transition:background .2s ease, transform .2s ease;
     }
     .timeline-btn:hover{ background:var(--pico-primary-background); color:var(--pico-primary-inverse); transform:translateY(-1px); }
-    .cell-main{ min-width:24rem; }
+    .timeline-btn:focus-visible{ outline:2px solid var(--pico-primary-border-color, var(--pico-color)); outline-offset:2px; }
+    .cell-main{ min-width:22rem; vertical-align:top; }
     .task-title{ font-weight:600; font-size:1.05rem; }
     .task-desc{ margin:.35rem 0 0; color:var(--pico-muted-color); font-size:.9rem; }
-    .task-meta-line{ margin-top:.5rem; display:flex; gap:.4rem; flex-wrap:wrap; }
     .pill{ display:inline-flex; align-items:center; gap:.35rem; border-radius:999px; padding:.2rem .75rem; background:var(--pico-muted-color,#d9d9d9); color:var(--pico-color,#111); font-size:.8rem; font-weight:500; }
     .pill--project{ background:var(--pico-secondary-background); color:var(--pico-secondary-inverse); }
-    .pill--project.pill--empty{ opacity:.6; }
     .pill--priority{ text-transform:lowercase; }
     .priority-critical{ background:var(--pico-danger-background); color:var(--pico-danger-inverse); }
     .priority-high{ background:var(--pico-warning-background); color:var(--pico-warning-inverse); }
     .priority-medium{ background:var(--pico-secondary-background); color:var(--pico-secondary-inverse); }
     .priority-low{ background:var(--pico-muted-border-color); color:var(--pico-color); }
     .pill--pending{ background:var(--pico-warning-background); color:var(--pico-warning-inverse); }
-    .activity-chip{ display:inline-flex; align-items:center; gap:.35rem; border-radius:999px; padding:.2rem .7rem; background:var(--pico-primary-background); color:var(--pico-primary-inverse); font-size:.8rem; }
-    .cell-activity small{ display:block; margin-top:.25rem; }
-    .cell-dates strong{ display:block; }
+    .cell-project{ min-width:12rem; vertical-align:top; }
+    .cell-project small{ display:block; margin-top:.2rem; }
+    .cell-priority, .cell-status, .cell-progress, .cell-start, .cell-due, .cell-assignee, .cell-collaborators, .cell-activity, .cell-approval{ vertical-align:top; }
+    .cell-progress, .cell-start, .cell-due{ white-space:nowrap; }
+    .cell-start strong, .cell-due strong{ display:block; }
+    .cell-assignee strong{ display:block; }
+    .cell-collaborators{ display:flex; flex-direction:column; gap:.3rem; }
+    .cell-activity{ display:flex; flex-direction:column; align-items:flex-start; gap:.35rem; }
+    .activity-chip{ display:inline-flex; align-items:center; gap:.35rem; border-radius:999px; padding:.25rem .8rem; border:1px solid var(--pico-primary-border-color, var(--pico-color)); background:transparent; color:var(--pico-primary-border-color, var(--pico-color)); font-size:.8rem; cursor:pointer; transition:background .2s ease, color .2s ease, transform .2s ease; }
+    .activity-chip:hover{ background:var(--pico-primary-background); color:var(--pico-primary-inverse); transform:translateY(-1px); }
+    .activity-chip:focus-visible{ outline:2px solid var(--pico-primary-border-color, var(--pico-color)); outline-offset:2px; }
+    .cell-activity small{ display:block; margin-top:.1rem; }
+    .progress-value{ font-weight:600; }
     .task-timeline-modal::backdrop{ backdrop-filter:blur(2px); background:rgba(0,0,0,.35); }
     .timeline-modal-body{ min-width:min(640px, 90vw); max-height:80vh; overflow-y:auto; }
     .timeline-modal-body__header{ display:flex; justify-content:space-between; align-items:center; gap:1rem; }

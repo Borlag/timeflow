@@ -7,7 +7,7 @@
     <button type="button" class="secondary" onclick="window.TimeflowTaskModal.close()">Закрыть</button>
   </header>
 
-  <section class="timeline-section">
+  <section class="timeline-section" data-timeline-section="overview">
     <div class="timeline-status">
       <span class="badge status-{{ task.status|enum_value }}">{{ task.status|status_label }}</span>
       <span class="pill pill--priority priority-{{ task.priority|enum_value }}">{{ task.priority|priority_label }}</span>
@@ -17,7 +17,7 @@
     {% if task.description %}<p class="timeline-description">{{ task.description }}</p>{% endif %}
   </section>
 
-  <section class="timeline-section">
+  <section class="timeline-section" data-timeline-section="collaborators">
     <h4>Соисполнители</h4>
     <ul class="timeline-collaborators">
       <li><strong>Основной:</strong> {{ task.assignee.full_name }}</li>
@@ -36,7 +36,7 @@
     {% endif %}
   </section>
 
-  <section class="timeline-section">
+  <section class="timeline-section" data-timeline-section="time">
     <h4>Списанное время</h4>
     <ul class="timeline-time-summary">
       {% for name, hours in time_summary %}
@@ -48,7 +48,7 @@
   </section>
 
   {% if can_comment %}
-  <section class="timeline-section">
+  <section class="timeline-section" id="timeline-comments" data-timeline-section="comments">
     <h4>Новый комментарий</h4>
     <form hx-post="/tasks/{{ task.id }}/comment" hx-target="#task-timeline-body" hx-swap="outerHTML" class="timeline-comment-form">
       <textarea name="comment" rows="3" placeholder="Поделиться обновлением" required></textarea>
@@ -57,7 +57,7 @@
   </section>
   {% endif %}
 
-  <section class="timeline-section">
+  <section class="timeline-section" id="timeline-history" data-timeline-section="history">
     <h4>История</h4>
     <ol class="timeline-list">
       {% for event in events %}
