@@ -104,5 +104,41 @@
       </table>
       </div>
     </section>
+    <section class="surface">
+      <h3>Соисполнители на согласовании</h3>
+      <div class="table-wrapper">
+      <table>
+        <thead><tr><th>Задача</th><th>Проект</th><th>Соисполнитель</th><th>Добавил</th><th>Дата</th><th>Действия</th></tr></thead>
+        <tbody>
+          {% for c in pending_collaborators %}
+          <tr>
+            <td>{{ c.task.title }}</td>
+            <td>{{ c.task.project.code if c.task.project else "—" }}</td>
+            <td>{{ c.user.full_name }}</td>
+            <td>{{ c.added_by.full_name if c.added_by else "—" }}</td>
+            <td>{{ c.created_at.strftime('%d.%m %H:%M') }}</td>
+            <td>
+              <div class="approval-actions">
+                <form method="post" action="/admin/approve_collaborator">
+                  <input type="hidden" name="collaborator_id" value="{{ c.id }}">
+                  <input type="hidden" name="approve" value="1">
+                  <button type="submit">Одобрить</button>
+                </form>
+                <form method="post" action="/admin/approve_collaborator">
+                  <input type="hidden" name="collaborator_id" value="{{ c.id }}">
+                  <input type="hidden" name="approve" value="0">
+                  <button class="secondary" type="submit">Отклонить</button>
+                </form>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+          {% if pending_collaborators|length == 0 %}
+          <tr><td colspan="6" class="muted">Нет соисполнителей на согласовании</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+      </div>
+    </section>
   </div>
 {% endblock %}
