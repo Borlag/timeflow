@@ -3,7 +3,7 @@
   --sidebar-w: 220px;
   --topbar-h: 52px;
   --pico-border-radius: 12px;
-  --content-max-width: 1200px;
+  --content-max-width: 1340px;
   --content-gutter: clamp(1rem, 2.2vw + 0.5rem, 3rem);
   /* Высота графиков: адаптивная, но ограниченная, чтобы не было «расползания» */
   --chart-h: clamp(260px, 38vh, 520px);
@@ -208,10 +208,13 @@
 .grid-two {
   display: grid;
   gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
 }
 
-@media (min-width: 992px) {
-  .grid-two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (min-width: 1200px) {
+  .grid-two {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .section-head {
@@ -273,6 +276,58 @@
 }
 
 .table-wrapper td .badge { white-space: nowrap; }
+
+.timesheet-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  margin: .85rem 0;
+}
+
+.timesheet-card__actions a {
+  min-width: 160px;
+  text-align: center;
+}
+
+.tasks-card .table-wrapper {
+  margin: 0;
+}
+
+.tasks-card .task-actions {
+  white-space: normal;
+  min-width: 16rem;
+}
+
+.tasks-card details {
+  width: 100%;
+}
+
+.task-update {
+  display: grid;
+  gap: .75rem;
+}
+
+.task-update__comment {
+  grid-column: 1 / -1;
+}
+
+.task-update__actions {
+  display: flex;
+  justify-content: flex-start;
+  gap: .5rem;
+}
+
+@media (min-width: 768px) {
+  .task-update {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: end;
+  }
+
+  .task-update__comment,
+  .task-update__actions {
+    grid-column: 1 / -1;
+  }
+}
 
 .inline-form {
   display: inline-flex;

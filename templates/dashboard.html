@@ -12,7 +12,7 @@
   </header>
 
   <section class="grid-two">
-    <details class="surface">
+    <details class="surface attendance-card">
       <summary>Посещаемость</summary>
       <div class="button-group" role="group" aria-label="Управление посещаемостью">
         <form method="post" action="/attendance/checkin">
@@ -33,10 +33,15 @@
       {% endif %}
     </details>
 
-    <article class="surface">
+    <article class="surface timesheet-card">
       <header>Табель</header>
       <p>За сегодня введено часов: <strong>{{ '%.2f'|format(hours_logged_today) }}</strong>.</p>
-      <p class="muted">Откройте <a href="/timesheet">табель</a>, чтобы дополнить или исправить данные.</p>
+      <div class="timesheet-card__actions" role="group" aria-label="Быстрые действия по табелю">
+        <a class="secondary" href="/timesheet/grid">Календарь задач</a>
+        <a class="secondary" href="/calendar/team">Календарь отдела</a>
+        <a class="contrast" href="/timesheet">Открыть табель</a>
+      </div>
+      <p class="muted">Используйте быстрые ссылки, чтобы перейти к нужному разделу.</p>
     </article>
   </section>
 
@@ -63,21 +68,27 @@
             <td><span class="badge status-{{ t.status|enum_value }}">{{ t.status|status_label }}</span></td>
             <td>{{ t.percent_complete }}%</td>
             <td>{{ t.due_date or "—" }}</td>
-            <td>
+            <td class="task-actions">
               <details>
                 <summary>Обновить</summary>
-                <form method="post" action="/tasks/update_status">
+                <form method="post" action="/tasks/update_status" class="task-update">
                   <input type="hidden" name="task_id" value="{{ t.id }}">
-                  <label>Статус
+                  <label><span>Статус</span>
                     <select name="status_v">
                       {% for s in TaskStatus %}
                       <option value="{{ s.value }}" {% if s==t.status %}selected{% endif %}>{{ s|status_label }}</option>
                       {% endfor %}
                     </select>
                   </label>
-                  <label>% выполнения <input type="number" name="percent" min="0" max="100" value="{{ t.percent_complete }}"></label>
-                  <label>Комментарий <input type="text" name="comment" placeholder="почему пауза / ожидание и т.п."></label>
-                  <button type="submit">Сохранить</button>
+                  <label><span>% выполнения</span>
+                    <input type="number" name="percent" min="0" max="100" value="{{ t.percent_complete }}">
+                  </label>
+                  <label class="task-update__comment"><span>Комментарий</span>
+                    <input type="text" name="comment" placeholder="почему пауза / ожидание и т.п.">
+                  </label>
+                  <div class="task-update__actions">
+                    <button type="submit">Сохранить</button>
+                  </div>
                 </form>
               </details>
             </td>
