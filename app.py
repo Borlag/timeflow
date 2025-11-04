@@ -378,15 +378,6 @@ def _task_latest_activity_subqueries():
     return status_subq, comment_subq
 
 
-def _parse_int(value: str | int | None) -> int | None:
-    if value in (None, ""):
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
 @app.get("/tasks", response_class=HTMLResponse)
 def tasks_page(
     request: Request,
@@ -395,16 +386,13 @@ def tasks_page(
     mine: int = 1,
     status_filter: str | None = None,
     priority_filter: str | None = None,
-    project_filter: str | None = None,
-    assignee_filter: str | None = None,
-    collaborator_filter: str | None = None,
+    project_filter: int | None = None,
+    assignee_filter: int | None = None,
+    collaborator_filter: int | None = None,
     approved_filter: str | None = None,
     q: str | None = None,
     sort: str = "priority",
 ):
-    project_filter_id = _parse_int(project_filter)
-    assignee_filter_id = _parse_int(assignee_filter)
-    collaborator_filter_id = _parse_int(collaborator_filter)
     status_subq, comment_subq = _task_latest_activity_subqueries()
     recent_order = func.coalesce(status_subq, comment_subq, Task.created_at).desc()
 
@@ -457,17 +445,17 @@ def tasks_page(
         except ValueError:
             pass
 
-    if project_filter_id:
-        filters.append(Task.project_id == project_filter_id)
+    if project_filter:
+        filters.append(Task.project_id == project_filter)
 
-    if assignee_filter_id:
-        filters.append(Task.assignee_id == assignee_filter_id)
+    if assignee_filter:
+        filters.append(Task.assignee_id == assignee_filter)
 
-    if collaborator_filter_id:
+    if collaborator_filter:
         if not join_collaborators:
             stmt = stmt.join(TaskCollaborator, TaskCollaborator.task_id == Task.id)
             join_collaborators = True
-        filters.append(TaskCollaborator.user_id == collaborator_filter_id)
+        filters.append(TaskCollaborator.user_id == collaborator_filter)
 
     if approved_filter == "pending":
         filters.append(Task.approved == False)  # noqa: E712
@@ -526,16 +514,16 @@ def tasks_page(
         filter_summary.append(
             f"Приоритет: {PRIORITY_LABELS.get(priority_filter, priority_filter)}"
         )
-    if project_filter_id:
-        project = next((p for p in projects if p.id == project_filter_id), None)
+    if project_filter:
+        project = next((p for p in projects if p.id == project_filter), None)
         if project:
             filter_summary.append(f"Проект: {project.code}")
-    if assignee_filter_id:
-        assignee = next((u for u in users if u.id == assignee_filter_id), None)
+    if assignee_filter:
+        assignee = next((u for u in users if u.id == assignee_filter), None)
         if assignee:
             filter_summary.append(f"Исполнитель: {assignee.full_name}")
-    if collaborator_filter_id:
-        coll_user = next((u for u in users if u.id == collaborator_filter_id), None)
+    if collaborator_filter:
+        coll_user = next((u for u in users if u.id == collaborator_filter), None)
         if coll_user:
             filter_summary.append(f"Соисполнитель: {coll_user.full_name}")
     if approved_filter == "pending":
@@ -567,11 +555,8 @@ def tasks_page(
             "status_filter": status_filter,
             "priority_filter": priority_filter,
             "project_filter": project_filter,
-            "project_filter_id": project_filter_id,
             "assignee_filter": assignee_filter,
-            "assignee_filter_id": assignee_filter_id,
             "collaborator_filter": collaborator_filter,
-            "collaborator_filter_id": collaborator_filter_id,
             "approved_filter": approved_filter,
             "search_query": raw_query,
             "mine": mine,
