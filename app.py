@@ -7,7 +7,7 @@ from fastapi import FastAPI, Depends, Request, Form, status, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload, joinedload
 from sqlalchemy import select, func, or_, text, delete
 
 from db import init_db, SessionLocal, engine
@@ -22,9 +22,12 @@ from models import (
     Role,
     Task,
     TaskComment,
+    TaskCollaborator,
+    TaskStatusLog,
     TaskStatus,
     TimeEntry,
     User,
+    ProjectTaskLink,
 )
 from auth import get_db, get_current_user, require_roles, install_session_middleware, get_password_hash, verify_password
 from config import APP_NAME, ORG_NAME, SHIFT_HOURS, ALLOW_BACKFILL_DAYS, ENABLE_SIGNUP
@@ -116,6 +119,14 @@ def startup():
 
         if "leave_request_id" not in cols["time_entries"]:
             conn.execute(text("ALTER TABLE time_entries ADD COLUMN leave_request_id INTEGER"))
+
+        conn.execute(
+            text(
+                "INSERT OR IGNORE INTO project_task_links (project_id, task_id, created_at) "
+                "SELECT project_id, id, COALESCE(created_at, CURRENT_TIMESTAMP) FROM tasks "
+                "WHERE project_id IS NOT NULL"
+            )
+        )
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
@@ -343,41 +354,438 @@ def attendance_checkout(request: Request, db: Session = Depends(get_db), user: U
 
 # ---------- TASKS ----------
 
+def _user_can_access_task(task: Task, user: User) -> bool:
+    if user.role in (Role.manager, Role.admin):
+        return True
+    if task.assignee_id == user.id or task.created_by_id == user.id:
+        return True
+    return any(coll.user_id == user.id for coll in task.collaborators)
+
+
+def _task_latest_activity_subqueries():
+    status_subq = (
+        select(func.max(TaskStatusLog.created_at))
+        .where(TaskStatusLog.task_id == Task.id)
+        .correlate(Task)
+        .scalar_subquery()
+    )
+    comment_subq = (
+        select(func.max(TaskComment.created_at))
+        .where(TaskComment.task_id == Task.id)
+        .correlate(Task)
+        .scalar_subquery()
+    )
+    return status_subq, comment_subq
+
+
 @app.get("/tasks", response_class=HTMLResponse)
-def tasks_page(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user), mine: int = 1):
-    q = select(Task).order_by(Task.priority.desc(), Task.due_date.nulls_last())
+def tasks_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    mine: int = 1,
+    status_filter: str | None = None,
+    priority_filter: str | None = None,
+    project_filter: int | None = None,
+    assignee_filter: int | None = None,
+    collaborator_filter: int | None = None,
+    approved_filter: str | None = None,
+    q: str | None = None,
+    sort: str = "priority",
+):
+    status_subq, comment_subq = _task_latest_activity_subqueries()
+    recent_order = func.coalesce(status_subq, comment_subq, Task.created_at).desc()
+
+    order_map: dict[str, tuple] = {
+        "priority": (
+            Task.priority.desc(),
+            Task.due_date.asc().nulls_last(),
+            Task.created_at.desc(),
+        ),
+        "due_date": (
+            Task.due_date.asc().nulls_last(),
+            Task.priority.desc(),
+        ),
+        "recent": (recent_order,),
+        "created": (Task.created_at.desc(),),
+        "status": (Task.status.asc(), Task.priority.desc()),
+    }
+
+    stmt = (
+        select(Task)
+        .options(
+            selectinload(Task.project),
+            selectinload(Task.assignee),
+            selectinload(Task.comments),
+            selectinload(Task.status_logs),
+            selectinload(Task.collaborators).joinedload(TaskCollaborator.user),
+        )
+        .order_by(*order_map.get(sort, order_map["priority"]))
+    )
+
+    filters = []
+    join_collaborators = False
+
     if mine:
-        q = q.where(Task.assignee_id == user.id)
-    tasks = db.scalars(q).all()
-    projects = db.scalars(select(Project).where(Project.status == "active").order_by(Project.code)).all()
-    users = db.scalars(select(User).order_by(User.full_name)).all(); return templates.TemplateResponse("tasks.html", {"request": request, "user": user, "tasks": tasks, "projects": projects, "users": users, "app_name": APP_NAME})
+        stmt = stmt.outerjoin(TaskCollaborator, TaskCollaborator.task_id == Task.id)
+        join_collaborators = True
+        filters.append(
+            or_(Task.assignee_id == user.id, TaskCollaborator.user_id == user.id)
+        )
+
+    if status_filter:
+        try:
+            filters.append(Task.status == TaskStatus(status_filter))
+        except ValueError:
+            pass
+
+    if priority_filter:
+        try:
+            filters.append(Task.priority == Priority(priority_filter))
+        except ValueError:
+            pass
+
+    if project_filter:
+        filters.append(Task.project_id == project_filter)
+
+    if assignee_filter:
+        filters.append(Task.assignee_id == assignee_filter)
+
+    if collaborator_filter:
+        if not join_collaborators:
+            stmt = stmt.join(TaskCollaborator, TaskCollaborator.task_id == Task.id)
+            join_collaborators = True
+        filters.append(TaskCollaborator.user_id == collaborator_filter)
+
+    if approved_filter == "pending":
+        filters.append(Task.approved == False)  # noqa: E712
+    elif approved_filter == "approved":
+        filters.append(Task.approved == True)  # noqa: E712
+
+    raw_query = q or ""
+    query_value = raw_query.strip()
+    if query_value:
+        like = f"%{query_value}%"
+        filters.append(or_(Task.title.ilike(like), Task.description.ilike(like)))
+
+    if filters:
+        stmt = stmt.where(*filters)
+    if join_collaborators:
+        stmt = stmt.distinct()
+
+    tasks = db.scalars(stmt).all()
+    projects = db.scalars(
+        select(Project).where(Project.status == "active").order_by(Project.code)
+    ).all()
+    users = db.scalars(select(User).order_by(User.full_name)).all()
+
+    task_meta: dict[int, dict[str, object]] = {}
+    for task in tasks:
+        last_activity = task.created_at
+        if task.comments:
+            last_activity = max(
+                last_activity,
+                max(comment.created_at for comment in task.comments),
+            )
+        if task.status_logs:
+            last_activity = max(
+                last_activity,
+                max(log.created_at for log in task.status_logs),
+            )
+        task_meta[task.id] = {
+            "comment_count": len(task.comments),
+            "pending_collaborators": [
+                coll for coll in task.collaborators if not coll.approved
+            ],
+            "approved_collaborators": [
+                coll for coll in task.collaborators if coll.approved
+            ],
+            "last_activity": last_activity,
+        }
+
+    filter_summary: list[str] = []
+    if query_value:
+        filter_summary.append(f"Поиск: {query_value}")
+    if status_filter:
+        filter_summary.append(
+            f"Статус: {TASK_STATUS_LABELS.get(status_filter, status_filter)}"
+        )
+    if priority_filter:
+        filter_summary.append(
+            f"Приоритет: {PRIORITY_LABELS.get(priority_filter, priority_filter)}"
+        )
+    if project_filter:
+        project = next((p for p in projects if p.id == project_filter), None)
+        if project:
+            filter_summary.append(f"Проект: {project.code}")
+    if assignee_filter:
+        assignee = next((u for u in users if u.id == assignee_filter), None)
+        if assignee:
+            filter_summary.append(f"Исполнитель: {assignee.full_name}")
+    if collaborator_filter:
+        coll_user = next((u for u in users if u.id == collaborator_filter), None)
+        if coll_user:
+            filter_summary.append(f"Соисполнитель: {coll_user.full_name}")
+    if approved_filter == "pending":
+        filter_summary.append("Требует согласования")
+    elif approved_filter == "approved":
+        filter_summary.append("Одобренные")
+
+    sort_options = {
+        "priority": "По приоритету",
+        "due_date": "По сроку",
+        "recent": "Недавняя активность",
+        "created": "Дата создания",
+        "status": "По статусу",
+    }
+
+    return templates.TemplateResponse(
+        "tasks.html",
+        {
+            "request": request,
+            "user": user,
+            "tasks": tasks,
+            "projects": projects,
+            "users": users,
+            "app_name": APP_NAME,
+            "task_meta": task_meta,
+            "filter_summary": filter_summary,
+            "sort": sort,
+            "sort_options": sort_options,
+            "status_filter": status_filter,
+            "priority_filter": priority_filter,
+            "project_filter": project_filter,
+            "assignee_filter": assignee_filter,
+            "collaborator_filter": collaborator_filter,
+            "approved_filter": approved_filter,
+            "search_query": raw_query,
+            "mine": mine,
+        },
+    )
+
+def _get_task_with_details(db: Session, task_id: int) -> Task | None:
+    return db.scalar(
+        select(Task)
+            .where(Task.id == task_id)
+            .options(
+                selectinload(Task.project),
+                selectinload(Task.assignee),
+                selectinload(Task.collaborators).joinedload(TaskCollaborator.user),
+                selectinload(Task.collaborators).joinedload(TaskCollaborator.added_by),
+                selectinload(Task.status_logs).joinedload(TaskStatusLog.author),
+                selectinload(Task.comments).joinedload(TaskComment.author),
+            )
+    )
+
+
+def _task_timeline_response(request: Request, db: Session, task_id: int, user: User):
+    task = _get_task_with_details(db, task_id)
+    if not task:
+        raise HTTPException(404, "Задача не найдена")
+    if not _user_can_access_task(task, user):
+        raise HTTPException(403, "Нет доступа к задаче")
+
+    time_entries = db.scalars(
+        select(TimeEntry)
+        .where(TimeEntry.task_id == task.id)
+        .options(selectinload(TimeEntry.user))
+        .order_by(TimeEntry.date.desc(), TimeEntry.created_at.desc())
+    ).all()
+
+    events = []
+    for log in task.status_logs:
+        events.append({
+            "type": "status",
+            "item": log,
+            "created_at": log.created_at,
+        })
+    for comment in task.comments:
+        events.append({
+            "type": "comment",
+            "item": comment,
+            "created_at": comment.created_at,
+        })
+    for entry in time_entries:
+        events.append({
+            "type": "time",
+            "item": entry,
+            "created_at": entry.created_at or dt.datetime.combine(entry.date, dt.time.min),
+        })
+    events.sort(key=lambda e: e["created_at"] or dt.datetime.min, reverse=True)
+
+    time_summary = db.execute(
+        select(User.full_name, func.coalesce(func.sum(TimeEntry.hours), 0.0))
+        .where(TimeEntry.task_id == task.id)
+        .join(User, User.id == TimeEntry.user_id)
+        .group_by(User.id, User.full_name)
+        .order_by(func.sum(TimeEntry.hours).desc())
+    ).all()
+
+    return templates.TemplateResponse(
+        "partials/task_timeline.html",
+        {
+            "request": request,
+            "user": user,
+            "task": task,
+            "events": events,
+            "time_entries": time_entries,
+            "time_summary": time_summary,
+            "approved_collaborators": [
+                coll for coll in task.collaborators if coll.approved
+            ],
+            "pending_collaborators": [
+                coll for coll in task.collaborators if not coll.approved
+            ],
+            "can_comment": _user_can_access_task(task, user),
+            "can_manage_collaborators": user.role in (Role.manager, Role.admin),
+        },
+    )
+
 
 @app.post("/tasks/update_status")
-def update_task_status(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user),
-                       task_id: int = Form(...), status_v: TaskStatus = Form(...), percent: int = Form(...), comment: str = Form("")):
+def update_task_status(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    task_id: int = Form(...),
+    status_v: TaskStatus = Form(...),
+    percent: int = Form(...),
+    comment: str = Form(""),
+):
     task = db.get(Task, task_id)
-    if not task or (user.role == Role.employee and task.assignee_id != user.id):
+    if not task:
+        raise HTTPException(404, "Задача не найдена")
+    if not _user_can_access_task(task, user):
         raise HTTPException(403, "Нет доступа к задаче")
+
+    new_percent = max(0, min(100, percent))
+    previous_status = task.status
+    previous_percent = task.percent_complete
+
     task.status = status_v
-    task.percent_complete = max(0, min(100, percent))
-    if comment.strip():
-        db.add(TaskComment(task_id=task.id, author_id=user.id, content=comment.strip()))
+    task.percent_complete = new_percent
+
+    note_text = comment.strip()
+    if previous_status != status_v or previous_percent != new_percent:
+        db.add(
+            TaskStatusLog(
+                task_id=task.id,
+                author_id=user.id,
+                from_status=previous_status.value if previous_status else None,
+                to_status=status_v.value,
+                percent_complete=new_percent,
+                note=note_text,
+            )
+        )
+
+    if note_text:
+        db.add(TaskComment(task_id=task.id, author_id=user.id, content=note_text))
+
     db.commit()
-    return RedirectResponse("/tasks?mine=1", status_code=302)
+    redirect_url = request.headers.get("Referer") or "/tasks?mine=1"
+    return RedirectResponse(redirect_url, status_code=302)
+
 
 @app.post("/tasks/new")
-def create_task(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user),
-                title: str = Form(...), description: str = Form(""), assignee_id: int = Form(...), project_id: int = Form(None),
-                priority: Priority = Form(Priority.medium), start_date: str = Form(None), due_date: str = Form(None)):
+def create_task(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    title: str = Form(...),
+    description: str = Form(""),
+    assignee_id: int = Form(...),
+    project_id: int = Form(None),
+    priority: Priority = Form(Priority.medium),
+    start_date: str = Form(None),
+    due_date: str = Form(None),
+    collaborator_ids: list[int] = Form(default=[]),
+):
     sd = dt.date.fromisoformat(start_date) if start_date else None
     dd = dt.date.fromisoformat(due_date) if due_date else None
-    # if employee creates -> requires approval
-    needs_approval = (user.role == Role.employee)
-    task = Task(title=title, description=description, assignee_id=assignee_id, project_id=project_id, priority=priority,
-                start_date=sd, due_date=dd, created_by_id=user.id, approved=(not needs_approval),
-                status=(TaskStatus.waiting if needs_approval else TaskStatus.in_progress))
-    db.add(task); db.commit()
+    needs_approval = user.role == Role.employee
+    status = TaskStatus.waiting if needs_approval else TaskStatus.in_progress
+    task = Task(
+        title=title,
+        description=description,
+        assignee_id=assignee_id,
+        project_id=project_id,
+        priority=priority,
+        start_date=sd,
+        due_date=dd,
+        created_by_id=user.id,
+        approved=not needs_approval,
+        status=status,
+    )
+    db.add(task)
+    db.flush()
+
+    db.add(
+        TaskStatusLog(
+            task_id=task.id,
+            author_id=user.id,
+            from_status=None,
+            to_status=task.status.value,
+            percent_complete=task.percent_complete,
+            note="Создана задача",
+        )
+    )
+
+    if project_id:
+        link_exists = db.scalar(
+            select(ProjectTaskLink)
+            .where(
+                ProjectTaskLink.project_id == project_id,
+                ProjectTaskLink.task_id == task.id,
+            )
+        )
+        if not link_exists:
+            db.add(ProjectTaskLink(project_id=project_id, task_id=task.id))
+
+    unique_collaborators = {
+        cid for cid in collaborator_ids if cid and cid != assignee_id
+    }
+    auto_approve = user.role in (Role.manager, Role.admin)
+    for cid in unique_collaborators:
+        db.add(
+            TaskCollaborator(
+                task_id=task.id,
+                user_id=cid,
+                added_by_id=user.id,
+                approved=auto_approve,
+            )
+        )
+
+    db.commit()
     return RedirectResponse("/tasks?mine=0", status_code=302)
+
+
+@app.get("/tasks/{task_id}/timeline", response_class=HTMLResponse)
+def task_timeline(
+    request: Request,
+    task_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    return _task_timeline_response(request, db, task_id, user)
+
+
+@app.post("/tasks/{task_id}/comment", response_class=HTMLResponse)
+def add_task_comment(
+    request: Request,
+    task_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    comment: str = Form(...),
+):
+    content = comment.strip()
+    if not content:
+        raise HTTPException(400, "Комментарий не может быть пустым")
+    task = db.get(Task, task_id)
+    if not task or not _user_can_access_task(task, user):
+        raise HTTPException(403, "Нет доступа к задаче")
+    db.add(TaskComment(task_id=task.id, author_id=user.id, content=content))
+    db.commit()
+    return _task_timeline_response(request, db, task_id, user)
 
 
 # ---------- TIME ENTRIES ----------
@@ -669,10 +1077,45 @@ def close_project(request: Request, db: Session = Depends(get_db), user: User = 
 def project_detail(request: Request, project_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     p = db.get(Project, project_id)
     if not p: raise HTTPException(404, "Проект не найден")
-    tasks = db.scalars(select(Task).where(Task.project_id == p.id).order_by(Task.priority.desc(), Task.due_date.nulls_last())).all()
+    tasks = db.scalars(
+        select(Task)
+        .where(Task.project_id == p.id)
+        .options(
+            selectinload(Task.assignee),
+            selectinload(Task.collaborators).joinedload(TaskCollaborator.user),
+            selectinload(Task.status_logs),
+        )
+        .order_by(Task.priority.desc(), Task.due_date.nulls_last())
+    ).all()
+    subtasks = db.scalars(
+        select(ProjectTaskLink)
+        .where(ProjectTaskLink.project_id == p.id)
+        .options(
+            selectinload(ProjectTaskLink.task)
+            .joinedload(Task.assignee),
+            selectinload(ProjectTaskLink.task)
+            .joinedload(Task.project),
+            selectinload(ProjectTaskLink.task)
+            .selectinload(Task.collaborators)
+            .joinedload(TaskCollaborator.user),
+        )
+        .order_by(ProjectTaskLink.created_at.desc())
+    ).all()
     members = db.scalars(select(ProjectMember).where(ProjectMember.project_id == p.id)).all()
     users = db.scalars(select(User).order_by(User.full_name)).all()
-    return templates.TemplateResponse("project_detail.html", {"request": request, "user": user, "project": p, "tasks": tasks, "members": members, "users": users, "app_name": APP_NAME})
+    return templates.TemplateResponse(
+        "project_detail.html",
+        {
+            "request": request,
+            "user": user,
+            "project": p,
+            "tasks": tasks,
+            "subtasks": subtasks,
+            "members": members,
+            "users": users,
+            "app_name": APP_NAME,
+        },
+    )
 
 @app.post("/projects/{project_id}/members/add")
 def project_add_member(request: Request, project_id: int, db: Session = Depends(get_db), user: User = Depends(require_roles(Role.manager, Role.admin)),
@@ -698,7 +1141,31 @@ def approvals(request: Request, db: Session = Depends(get_db), user: User = Depe
     pending_time = db.scalars(select(TimeEntry).where(TimeEntry.approved == False).order_by(TimeEntry.date.desc())).all()  # noqa: E712
     pending_leaves = db.scalars(select(LeaveRequest).where(LeaveRequest.status == LeaveStatus.pending).order_by(LeaveRequest.created_at.desc())).all()
     pending_tasks = db.scalars(select(Task).where(Task.approved == False).order_by(Task.created_at.desc())).all()
-    return templates.TemplateResponse("admin.html", {"request": request, "user": user, "pending_time": pending_time, "pending_leaves": pending_leaves, "pending_tasks": pending_tasks, "app_name": APP_NAME})
+    pending_collaborators = db.scalars(
+        select(TaskCollaborator)
+        .where(TaskCollaborator.approved == False)
+        .options(
+            selectinload(TaskCollaborator.user),
+            selectinload(TaskCollaborator.added_by),
+            selectinload(TaskCollaborator.task)
+            .selectinload(Task.project),
+            selectinload(TaskCollaborator.task)
+            .selectinload(Task.assignee),
+        )
+        .order_by(TaskCollaborator.created_at.desc())
+    ).all()  # noqa: E712
+    return templates.TemplateResponse(
+        "admin.html",
+        {
+            "request": request,
+            "user": user,
+            "pending_time": pending_time,
+            "pending_leaves": pending_leaves,
+            "pending_tasks": pending_tasks,
+            "pending_collaborators": pending_collaborators,
+            "app_name": APP_NAME,
+        },
+    )
 
 @app.post("/admin/approve_task")
 def approve_task(request: Request, db: Session = Depends(get_db), user: User = Depends(require_roles(Role.manager, Role.admin)),
@@ -708,6 +1175,25 @@ def approve_task(request: Request, db: Session = Depends(get_db), user: User = D
     t.approved = bool(approve)
     if approve and t.status == TaskStatus.waiting:
         t.status = TaskStatus.in_progress
+    db.commit()
+    return RedirectResponse("/admin/approvals", status_code=302)
+
+
+@app.post("/admin/approve_collaborator")
+def approve_collaborator(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_roles(Role.manager, Role.admin)),
+    collaborator_id: int = Form(...),
+    approve: int = Form(1),
+):
+    collab = db.get(TaskCollaborator, collaborator_id)
+    if not collab:
+        raise HTTPException(404, "Соисполнитель не найден")
+    if approve:
+        collab.approved = True
+    else:
+        db.delete(collab)
     db.commit()
     return RedirectResponse("/admin/approvals", status_code=302)
 

@@ -5,48 +5,118 @@
 
   <article>
     <h3>Задачи проекта</h3>
-    <table class="sticky-table">
-      <thead><tr><th>Заголовок</th><th>Статус</th><th>Приоритет</th><th>%</th><th>Срок</th><th>Исполнитель</th><th>Согласование</th></tr></thead>
-      <tbody>
-        {% for t in tasks %}
-        <tr>
-          <td>{{ t.title }}</td>
-          <td><span class="badge status-{{ t.status }}">{{ t.status }}</span></td>
-          <td>{{ t.priority }}</td>
-          <td>{{ t.percent_complete }}%</td>
-          <td>{{ t.due_date or "—" }}</td>
-          <td>{{ t.assignee.full_name }}</td>
-          <td>{% if t.approved %}OK{% else %}<span class="badge status-waiting">на согласовании</span>{% endif %}</td>
-        </tr>
-        {% endfor %}
-        {% if tasks|length == 0 %}
-        <tr><td colspan="7" class="muted">Задач пока нет</td></tr>
-        {% endif %}
-      </tbody>
-    </table>
+    <div class="table-wrapper sticky-table">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col" class="col-action" aria-label="История"></th>
+            <th scope="col">Задача</th>
+            <th scope="col">Статус</th>
+            <th scope="col">Прогресс</th>
+            <th scope="col">Срок</th>
+            <th scope="col">Исполнитель</th>
+            <th scope="col">Соисполнители</th>
+            <th scope="col">Согласование</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in tasks %}
+          {% set approved = (t.collaborators | selectattr('approved') | list) %}
+          {% set pending = (t.collaborators | rejectattr('approved') | list) %}
+          {% set last_log = t.status_logs[-1] if t.status_logs|length > 0 else None %}
+          <tr>
+            <td class="cell-history">
+              <button type="button" class="timeline-btn" hx-get="/tasks/{{ t.id }}/timeline" hx-target="#task-timeline-body" hx-swap="innerHTML" hx-on::after-swap="window.TimeflowTaskModal.open()" aria-label="Открыть историю задачи">
+                🕘
+              </button>
+            </td>
+            <td class="cell-main">
+              <div class="task-title">{{ t.title }}</div>
+              {% if t.description %}<p class="task-desc">{{ t.description }}</p>{% endif %}
+              <div class="task-meta-line">
+                <span class="pill pill--project">{{ project.code }}</span>
+                <span class="pill pill--priority priority-{{ t.priority|enum_value }}">{{ t.priority|priority_label }}</span>
+              </div>
+            </td>
+            <td class="cell-status">
+              <span class="badge status-{{ t.status|enum_value }}">{{ t.status|status_label }}</span>
+              {% if last_log %}<small class="muted">обновлено {{ last_log.created_at.strftime('%d.%m %H:%M') }}</small>{% endif %}
+            </td>
+            <td class="cell-progress">{{ t.percent_complete }}%</td>
+            <td class="cell-dates">
+              {% if t.due_date %}<strong>{{ t.due_date }}</strong>{% else %}<span class="muted">без срока</span>{% endif %}
+              {% if t.start_date %}<small class="muted">старт {{ t.start_date }}</small>{% endif %}
+            </td>
+            <td class="cell-assignee">{{ t.assignee.full_name }}</td>
+            <td class="cell-collaborators">
+              {% if approved %}
+                {% for coll in approved %}<span class="pill">{{ coll.user.full_name }}</span>{% endfor %}
+              {% endif %}
+              {% if pending %}
+                {% for coll in pending %}<span class="pill pill--pending" title="Ожидает согласования">{{ coll.user.full_name }}</span>{% endfor %}
+              {% endif %}
+              {% if not approved and not pending %}<span class="muted">—</span>{% endif %}
+            </td>
+            <td class="cell-approval">{% if t.approved %}<span class="badge status-done">Одобрено</span>{% else %}<span class="badge status-waiting">на согласовании</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+          {% if tasks|length == 0 %}
+          <tr><td colspan="8" class="muted">Задач пока нет</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </article>
+
+  <article>
+    <h3>Хронология подзадач</h3>
+    <ul class="subtask-timeline">
+      {% for link in subtasks %}
+        <li>
+          <div>
+            <strong>{{ link.task.title }}</strong>
+            <small class="muted">{{ link.created_at.strftime('%d.%m %H:%M') }}</small>
+          </div>
+          <div class="subtask-meta">
+            <span class="badge status-{{ link.task.status|enum_value }}">{{ link.task.status|status_label }}</span>
+            <span class="pill pill--priority priority-{{ link.task.priority|enum_value }}">{{ link.task.priority|priority_label }}</span>
+            <span class="pill">{{ link.task.assignee.full_name }}</span>
+          </div>
+          <button type="button" class="timeline-btn" hx-get="/tasks/{{ link.task.id }}/timeline" hx-target="#task-timeline-body" hx-swap="innerHTML" hx-on::after-swap="window.TimeflowTaskModal.open()">История</button>
+        </li>
+      {% else %}
+        <li class="muted">Подзадач пока нет — создайте задачу, чтобы она появилась в проекте.</li>
+      {% endfor %}
+    </ul>
   </article>
 
   <article>
     <h3>Добавить задачу</h3>
-    <form method="post" action="/tasks/new" class="grid">
+    <form method="post" action="/tasks/new" class="project-task-form">
       <input type="hidden" name="project_id" value="{{ project.id }}">
-      <label>Заголовок <input type="text" name="title" required></label>
-      <label>Приоритет
+      <label><span>Заголовок</span><input type="text" name="title" required></label>
+      <label><span>Приоритет</span>
         <select name="priority">
-          {% for p in Priority %}<option value="{{ p.value }}">{{ p.value }}</option>{% endfor %}
+          {% for p in Priority %}<option value="{{ p.value }}">{{ p|priority_label }}</option>{% endfor %}
         </select>
       </label>
-      <label>Описание <textarea name="description"></textarea></label>
-      <label>Исполнитель
+      <label class="wide"><span>Описание</span><textarea name="description"></textarea></label>
+      <label><span>Исполнитель</span>
         <select name="assignee_id" required>
           {% for u in users %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}
         </select>
       </label>
-      <label>Начало <input type="date" name="start_date"></label>
-      <label>Срок <input type="date" name="due_date"></label>
-      <button type="submit">Создать</button>
+      <label><span>Соисполнители</span>
+        <select name="collaborator_ids" multiple size="4">
+          {% for u in users %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}
+        </select>
+        <small class="muted">Соисполнители начнут работу после одобрения менеджером или администратором.</small>
+      </label>
+      <label><span>Начало</span><input type="date" name="start_date"></label>
+      <label><span>Срок</span><input type="date" name="due_date"></label>
+      <button type="submit" class="primary">Создать</button>
     </form>
-    <p class="muted">Если задачу создаёт сотрудник, она появится со статусом «на согласовании» до одобрения менеджером/админом.</p>
+    <p class="muted">Если задачу создаёт сотрудник, она появится со статусом «на согласовании» до одобрения менеджером или администратором.</p>
   </article>
 
   {% if user.role in ['manager','admin'] %}
@@ -79,4 +149,81 @@
     <p class="muted">Только владелец проекта, участники, менеджеры и админы видят проект в табеле и могут списывать на него время.</p>
   </article>
   {% endif %}
+
+  <dialog id="task-timeline-modal" class="task-timeline-modal">
+    <article id="task-timeline-body" class="timeline-modal-body">
+      <header class="timeline-modal-body__header">
+        <strong>Загрузка…</strong>
+      </header>
+      <p class="muted">Подождите, загружаем историю задачи.</p>
+    </article>
+  </dialog>
+
+  <script>
+    (function(){
+      const dialog = document.getElementById('task-timeline-modal');
+      window.TimeflowTaskModal = window.TimeflowTaskModal || {
+        open(){ if(dialog && !dialog.open){ dialog.showModal(); } },
+        close(){ if(dialog && dialog.open){ dialog.close(); } }
+      };
+      if(dialog){
+        dialog.addEventListener('click', (event)=>{
+          if(event.target === dialog){ window.TimeflowTaskModal.close(); }
+        });
+      }
+    })();
+  </script>
+
+  <style>
+    .table-wrapper table{ min-width:1100px; }
+    .col-action{ width:54px; text-align:center; }
+    .timeline-btn{
+      border-radius:999px;
+      border:1px solid var(--pico-primary-border-color, var(--pico-color));
+      background:transparent;
+      width:40px; height:40px;
+      display:inline-flex; align-items:center; justify-content:center;
+      font-size:1.1rem;
+      transition:background .2s ease, transform .2s ease;
+    }
+    .timeline-btn:hover{ background:var(--pico-primary-background); color:var(--pico-primary-inverse); transform:translateY(-1px); }
+    .cell-main{ min-width:22rem; }
+    .task-title{ font-weight:600; }
+    .task-desc{ margin:.3rem 0 0; color:var(--pico-muted-color); }
+    .task-meta-line{ margin-top:.4rem; display:flex; gap:.4rem; flex-wrap:wrap; }
+    .pill{ display:inline-flex; align-items:center; gap:.35rem; border-radius:999px; padding:.2rem .75rem; background:var(--pico-muted-color,#d9d9d9); color:var(--pico-color,#111); font-size:.8rem; font-weight:500; }
+    .pill--project{ background:var(--pico-secondary-background); color:var(--pico-secondary-inverse); }
+    .pill--priority{ text-transform:lowercase; }
+    .priority-critical{ background:var(--pico-danger-background); color:var(--pico-danger-inverse); }
+    .priority-high{ background:var(--pico-warning-background); color:var(--pico-warning-inverse); }
+    .priority-medium{ background:var(--pico-secondary-background); color:var(--pico-secondary-inverse); }
+    .priority-low{ background:var(--pico-muted-border-color); color:var(--pico-color); }
+    .pill--pending{ background:var(--pico-warning-background); color:var(--pico-warning-inverse); }
+    .cell-progress{ font-weight:600; }
+    .subtask-timeline{ list-style:none; padding:0; margin:0; display:grid; gap:.75rem; }
+    .subtask-timeline li{ display:grid; grid-template-columns:1fr auto auto; gap:1rem; align-items:center; padding:.75rem; border:1px solid var(--pico-muted-border-color); border-radius:.75rem; }
+    .subtask-timeline li strong{ display:block; }
+    .subtask-meta{ display:flex; flex-wrap:wrap; gap:.4rem; }
+    .project-task-form{
+      display:grid;
+      grid-template-columns:repeat(3, minmax(220px, 1fr));
+      gap:1rem;
+      align-items:end;
+    }
+    .project-task-form .wide{ grid-column:1 / -1; }
+    .project-task-form textarea{ min-height:3rem; resize:vertical; }
+    .project-task-form button{ width:max-content; justify-self:start; }
+    .project-task-form select[multiple]{ height:120px; }
+    .task-timeline-modal::backdrop{ backdrop-filter:blur(2px); background:rgba(0,0,0,.35); }
+    .timeline-modal-body{ min-width:min(640px, 90vw); max-height:80vh; overflow-y:auto; }
+    @media (max-width: 960px){
+      .subtask-timeline li{ grid-template-columns:1fr; }
+      .subtask-meta{ justify-content:flex-start; }
+      .project-task-form{ grid-template-columns:repeat(2, minmax(200px,1fr)); }
+    }
+    @media (max-width: 680px){
+      .table-wrapper table{ min-width:900px; }
+      .project-task-form{ grid-template-columns:1fr; }
+    }
+  </style>
 {% endblock %}

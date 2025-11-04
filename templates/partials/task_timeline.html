@@ -1,0 +1,125 @@
+<article class="timeline-modal-body">
+  <header class="timeline-modal-body__header">
+    <div>
+      <h3>{{ task.title }}</h3>
+      <p class="muted">{% if task.project %}Проект {{ task.project.code }} • {% endif %}Исполнитель: {{ task.assignee.full_name }}</p>
+    </div>
+    <button type="button" class="secondary" onclick="window.TimeflowTaskModal.close()">Закрыть</button>
+  </header>
+
+  <section class="timeline-section">
+    <div class="timeline-status">
+      <span class="badge status-{{ task.status|enum_value }}">{{ task.status|status_label }}</span>
+      <span class="pill pill--priority priority-{{ task.priority|enum_value }}">{{ task.priority|priority_label }}</span>
+      <span class="pill pill--progress">Прогресс {{ task.percent_complete }}%</span>
+      {% if task.due_date %}<span class="pill pill--due">Срок до {{ task.due_date }}</span>{% endif %}
+    </div>
+    {% if task.description %}<p class="timeline-description">{{ task.description }}</p>{% endif %}
+  </section>
+
+  <section class="timeline-section">
+    <h4>Соисполнители</h4>
+    <ul class="timeline-collaborators">
+      <li><strong>Основной:</strong> {{ task.assignee.full_name }}</li>
+      {% for coll in approved_collaborators %}
+        <li><strong>Соисполнитель:</strong> {{ coll.user.full_name }}</li>
+      {% endfor %}
+      {% for coll in pending_collaborators %}
+        <li><strong>На согласовании:</strong> {{ coll.user.full_name }}{% if coll.added_by %} · добавил {{ coll.added_by.full_name }}{% endif %}</li>
+      {% endfor %}
+      {% if approved_collaborators|length == 0 and pending_collaborators|length == 0 %}
+        <li class="muted">Соисполнителей пока нет.</li>
+      {% endif %}
+    </ul>
+    {% if pending_collaborators %}
+      <p class="muted">Одобряйте соисполнителей на странице «Согласования», чтобы они получили доступ к задаче.</p>
+    {% endif %}
+  </section>
+
+  <section class="timeline-section">
+    <h4>Списанное время</h4>
+    <ul class="timeline-time-summary">
+      {% for name, hours in time_summary %}
+        <li><strong>{{ name }}</strong> — {{ '%.2f'|format(hours) }} ч</li>
+      {% else %}
+        <li class="muted">Пока никто не списывал время на эту задачу.</li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  {% if can_comment %}
+  <section class="timeline-section">
+    <h4>Новый комментарий</h4>
+    <form hx-post="/tasks/{{ task.id }}/comment" hx-target="#task-timeline-body" hx-swap="outerHTML" class="timeline-comment-form">
+      <textarea name="comment" rows="3" placeholder="Поделиться обновлением" required></textarea>
+      <button type="submit" class="primary">Отправить</button>
+    </form>
+  </section>
+  {% endif %}
+
+  <section class="timeline-section">
+    <h4>История</h4>
+    <ol class="timeline-list">
+      {% for event in events %}
+        {% if event.type == 'status' %}
+          <li class="timeline-item timeline-item--status">
+            <time datetime="{{ event.item.created_at.isoformat() }}">{{ event.item.created_at.strftime('%d.%m %H:%M') }}</time>
+            <div>
+              <strong>{{ event.item.author.full_name if event.item.author else 'Система' }}</strong>
+              <p>Изменил статус на «{{ event.item.to_status|status_label }}» ({{ event.item.percent_complete }}%).</p>
+              {% if event.item.note %}<p class="timeline-note">{{ event.item.note }}</p>{% endif %}
+            </div>
+          </li>
+        {% elif event.type == 'comment' %}
+          <li class="timeline-item timeline-item--comment">
+            <time datetime="{{ event.item.created_at.isoformat() }}">{{ event.item.created_at.strftime('%d.%m %H:%M') }}</time>
+            <div>
+              <strong>{{ event.item.author.full_name }}</strong>
+              <p class="timeline-note">{{ event.item.content | replace('\n', '<br>') | safe }}</p>
+            </div>
+          </li>
+        {% elif event.type == 'time' %}
+          <li class="timeline-item timeline-item--time">
+            <time datetime="{{ event.item.created_at.isoformat() if event.item.created_at else event.item.date.isoformat() }}">{{ (event.item.created_at or datetime.datetime.combine(event.item.date, datetime.time.min)).strftime('%d.%m %H:%M') }}</time>
+            <div>
+              <strong>{{ event.item.user.full_name }}</strong>
+              <p>Списал {{ '%.2f'|format(event.item.hours) }} ч{% if not event.item.approved %} <span class="badge status-waiting">ожидает подтверждения</span>{% endif %}</p>
+              {% if event.item.notes %}<p class="timeline-note">{{ event.item.notes }}</p>{% endif %}
+            </div>
+          </li>
+        {% endif %}
+      {% else %}
+        <li class="timeline-item timeline-item--empty">
+          <div>
+            <p class="muted">История пока пуста — добавьте статус или комментарий.</p>
+          </div>
+        </li>
+      {% endfor %}
+    </ol>
+  </section>
+
+  <style>
+    .timeline-section{ margin:1.5rem 0; }
+    .timeline-section h4{ margin-bottom:.6rem; }
+    .timeline-status{ display:flex; flex-wrap:wrap; gap:.5rem; }
+    .pill--progress, .pill--due{ display:inline-flex; align-items:center; padding:.25rem .75rem; border-radius:999px; background:var(--pico-muted-border-color); font-size:.85rem; }
+    .timeline-description{ margin-top:.6rem; font-size:.95rem; color:var(--pico-color); }
+    .timeline-collaborators{ list-style:none; padding:0; margin:0; display:grid; gap:.35rem; }
+    .timeline-time-summary{ list-style:none; padding:0; margin:0; display:grid; gap:.35rem; }
+    .timeline-comment-form{ display:grid; gap:.7rem; }
+    .timeline-comment-form textarea{ width:100%; resize:vertical; }
+    .timeline-list{ list-style:none; padding:0; margin:0; display:grid; gap:1rem; }
+    .timeline-item{ display:grid; grid-template-columns:90px 1fr; gap:1rem; align-items:start; }
+    .timeline-item time{ font-size:.85rem; color:var(--pico-muted-color); }
+    .timeline-item--status div{ border-left:3px solid var(--pico-primary-border-color); padding-left:.9rem; }
+    .timeline-item--comment div{ border-left:3px solid var(--pico-secondary-border-color); padding-left:.9rem; }
+    .timeline-item--time div{ border-left:3px solid var(--pico-muted-border-color); padding-left:.9rem; }
+    .timeline-item--empty{ grid-template-columns:1fr; }
+    .timeline-item--empty div{ border-left:3px solid transparent; padding-left:0; }
+    .timeline-note{ margin:.35rem 0 0; white-space:pre-wrap; }
+    @media (max-width: 620px){
+      .timeline-item{ grid-template-columns:1fr; }
+      .timeline-item div{ padding-left:0; border-left:none !important; }
+    }
+  </style>
+</article>

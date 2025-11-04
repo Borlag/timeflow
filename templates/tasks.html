@@ -1,26 +1,172 @@
 {% extends "base.html" %}
 {% block content_class %} content--wide{% endblock %}
 {% block content %}
-  <h2>Задачи {% if request.query_params.get('mine') == '1' %}(мои){% endif %}</h2>
+  <h2>Задачи {% if mine|int == 1 %}(мои){% endif %}</h2>
   <nav class="segmented" aria-label="Фильтр списка задач">
-    <a href="/tasks?mine=1" class="{% if request.query_params.get('mine') == '1' %}active{% endif %}">Мои</a>
-    <a href="/tasks?mine=0" class="{% if request.query_params.get('mine') != '1' %}active{% endif %}">Все</a>
+    <a href="/tasks?mine=1" class="{% if mine|int == 1 %}active{% endif %}">Мои</a>
+    <a href="/tasks?mine=0" class="{% if mine|int != 1 %}active{% endif %}">Все</a>
   </nav>
+
+  <form method="get" class="tasks-filter-panel" aria-label="Фильтры задач">
+    <input type="hidden" name="mine" value="{{ mine }}">
+    <label class="tasks-filter-panel__field">
+      <span>Поиск</span>
+      <input type="search" name="q" placeholder="Название или описание" value="{{ search_query }}">
+    </label>
+    <label class="tasks-filter-panel__field">
+      <span>Статус</span>
+      <select name="status_filter">
+        <option value="">Любой</option>
+        {% for st in TaskStatus %}
+          <option value="{{ st.value }}" {% if status_filter == st.value %}selected{% endif %}>{{ st|status_label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="tasks-filter-panel__field">
+      <span>Приоритет</span>
+      <select name="priority_filter">
+        <option value="">Любой</option>
+        {% for pr in Priority %}
+          <option value="{{ pr.value }}" {% if priority_filter == pr.value %}selected{% endif %}>{{ pr|priority_label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="tasks-filter-panel__field">
+      <span>Проект</span>
+      <select name="project_filter">
+        <option value="">Любой</option>
+        {% for p in projects %}
+          <option value="{{ p.id }}" {% if project_filter and project_filter|int == p.id %}selected{% endif %}>{{ p.code }} — {{ p.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="tasks-filter-panel__field">
+      <span>Исполнитель</span>
+      <select name="assignee_filter">
+        <option value="">Любой</option>
+        {% for u in users %}
+          <option value="{{ u.id }}" {% if assignee_filter and assignee_filter|int == u.id %}selected{% endif %}>{{ u.full_name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="tasks-filter-panel__field">
+      <span>Соисполнитель</span>
+      <select name="collaborator_filter">
+        <option value="">Любой</option>
+        {% for u in users %}
+          <option value="{{ u.id }}" {% if collaborator_filter and collaborator_filter|int == u.id %}selected{% endif %}>{{ u.full_name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="tasks-filter-panel__field">
+      <span>Согласование</span>
+      <select name="approved_filter">
+        <option value="">Любое</option>
+        <option value="pending" {% if approved_filter == 'pending' %}selected{% endif %}>Требует согласования</option>
+        <option value="approved" {% if approved_filter == 'approved' %}selected{% endif %}>Одобренные</option>
+      </select>
+    </label>
+    <label class="tasks-filter-panel__field">
+      <span>Сортировка</span>
+      <select name="sort">
+        {% for key, label in sort_options.items() %}
+          <option value="{{ key }}" {% if sort == key %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <div class="tasks-filter-panel__actions">
+      <button type="submit" class="primary">Применить</button>
+      <a class="secondary" href="/tasks?mine={{ mine }}">Сбросить</a>
+    </div>
+  </form>
+
+  {% if filter_summary %}
+  <div class="filter-summary" role="status" aria-live="polite">
+    {% for chip in filter_summary %}
+      <span class="chip">{{ chip }}</span>
+    {% endfor %}
+  </div>
+  {% endif %}
 
   <div class="table-wrapper sticky-table {% if tasks|length > 12 %}stick{% endif %}">
     <table>
-      <thead><tr><th>Заголовок</th><th>Проект</th><th>Статус</th><th>Приоритет</th><th>%</th><th>Срок</th><th>Исполнитель</th><th>Согласование</th></tr></thead>
+      <thead>
+        <tr>
+          <th scope="col" class="col-action" aria-label="История"></th>
+          <th scope="col">Задача</th>
+          <th scope="col">Статус</th>
+          <th scope="col">Сроки</th>
+          <th scope="col">Исполнитель</th>
+          <th scope="col">Соисполнители</th>
+          <th scope="col">Активность</th>
+          <th scope="col">Согласование</th>
+        </tr>
+      </thead>
       <tbody>
         {% for t in tasks %}
+        {% set meta = task_meta.get(t.id) %}
         <tr>
-          <td><strong>{{ t.title }}</strong><br><small>{{ t.description }}</small></td>
-          <td>{{ t.project.code if t.project else "—" }}</td>
-          <td><span class="badge status-{{ t.status|enum_value }}">{{ t.status|status_label }}</span></td>
-          <td>{{ t.priority|priority_label }}</td>
-          <td>{{ t.percent_complete }}%</td>
-          <td>{{ t.due_date or "—" }}</td>
-          <td>{{ t.assignee.full_name }}</td>
-          <td>{% if t.approved %}OK{% else %}<span class="badge status-waiting">на согласовании</span>{% endif %}</td>
+          <td class="cell-history">
+            <button type="button" class="timeline-btn" hx-get="/tasks/{{ t.id }}/timeline" hx-target="#task-timeline-body" hx-swap="innerHTML" hx-on::after-swap="window.TimeflowTaskModal.open()" aria-label="Открыть историю задачи">
+              🕘
+            </button>
+          </td>
+          <td class="cell-main">
+            <div class="task-title">{{ t.title }}</div>
+            {% if t.description %}<p class="task-desc">{{ t.description }}</p>{% endif %}
+            <div class="task-meta-line">
+              {% if t.project %}<span class="pill pill--project">{{ t.project.code }}</span>{% else %}<span class="pill pill--project pill--empty">Без проекта</span>{% endif %}
+              <span class="pill pill--priority priority-{{ t.priority|enum_value }}">{{ t.priority|priority_label }}</span>
+            </div>
+          </td>
+          <td class="cell-status">
+            <span class="badge status-{{ t.status|enum_value }}">{{ t.status|status_label }}</span>
+            <small class="muted">Прогресс {{ t.percent_complete }}%</small>
+          </td>
+          <td class="cell-dates">
+            {% if t.due_date %}
+              <strong>{{ t.due_date }}</strong>
+            {% else %}
+              <span class="muted">без срока</span>
+            {% endif %}
+            {% if t.start_date %}<small class="muted">старт {{ t.start_date }}</small>{% endif %}
+          </td>
+          <td class="cell-assignee">
+            <strong>{{ t.assignee.full_name }}</strong>
+          </td>
+          <td class="cell-collaborators">
+            {% set approved = meta['approved_collaborators'] if meta else [] %}
+            {% set pending = meta['pending_collaborators'] if meta else [] %}
+            {% if approved %}
+              {% for coll in approved %}
+                <span class="pill">{{ coll.user.full_name }}</span>
+              {% endfor %}
+            {% endif %}
+            {% if pending %}
+              {% for coll in pending %}
+                <span class="pill pill--pending" title="Ожидает согласования">{{ coll.user.full_name }}</span>
+              {% endfor %}
+            {% endif %}
+            {% if not approved and not pending %}
+              <span class="muted">—</span>
+            {% endif %}
+          </td>
+          <td class="cell-activity">
+            {% if meta %}
+              <span class="activity-chip">💬 {{ meta['comment_count'] }}</span>
+              {% set last = meta['last_activity'] %}
+              <small class="muted">Обновлено {{ last.strftime('%d.%m %H:%M') }}</small>
+            {% else %}
+              <span class="muted">—</span>
+            {% endif %}
+          </td>
+          <td class="cell-approval">
+            {% if t.approved %}
+              <span class="badge status-done">Одобрено</span>
+            {% else %}
+              <span class="badge status-waiting">на согласовании</span>
+            {% endif %}
+          </td>
         </tr>
         {% endfor %}
         {% if tasks|length == 0 %}
@@ -29,6 +175,15 @@
       </tbody>
     </table>
   </div>
+
+  <dialog id="task-timeline-modal" class="task-timeline-modal">
+    <article id="task-timeline-body" class="timeline-modal-body" aria-live="polite">
+      <header class="timeline-modal-body__header">
+        <strong>Загрузка…</strong>
+      </header>
+      <p class="muted">Подождите, загружаем историю задачи.</p>
+    </article>
+  </dialog>
 
   <hr>
   <h3>Создать задачу</h3>
@@ -51,12 +206,77 @@
         {% for u in users %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}
       </select>
     </label>
+    <label><span>Соисполнители</span>
+      <select name="collaborator_ids" multiple size="4">
+        {% for u in users %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}
+      </select>
+      <small class="muted">Добавленные соисполнители увидят задачу после одобрения руководителя или администратора.</small>
+    </label>
     <label><span>Начало</span><input type="date" name="start_date"></label>
     <label><span>Срок</span><input type="date" name="due_date"></label>
     <button type="submit" class="primary">Создать</button>
   </form>
+  <p class="muted">Если задачу создаёт сотрудник, она появится со статусом «на согласовании» до одобрения менеджером или администратором.</p>
+
+  <script>
+    (function(){
+      const dialog = document.getElementById('task-timeline-modal');
+      window.TimeflowTaskModal = {
+        open(){ if(dialog && !dialog.open){ dialog.showModal(); } },
+        close(){ if(dialog && dialog.open){ dialog.close(); } }
+      };
+      if(dialog){
+        dialog.addEventListener('click', (event)=>{
+          if(event.target === dialog){ window.TimeflowTaskModal.close(); }
+        });
+      }
+    })();
+  </script>
+
   <style>
-    /* Чёткая сетка формы + идеальная центровка кнопки */
+    .tasks-filter-panel{
+      display:grid;
+      grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));
+      gap:1rem;
+      margin:1.2rem 0 1.5rem;
+      align-items:end;
+    }
+    .tasks-filter-panel__field span{ font-size:.85rem; font-weight:500; }
+    .tasks-filter-panel__actions{ display:flex; gap:.75rem; align-items:center; }
+    .filter-summary{ display:flex; flex-wrap:wrap; gap:.5rem; margin-bottom:1rem; }
+    .chip{ display:inline-flex; align-items:center; gap:.4rem; border-radius:999px; padding:.25rem .8rem; background:var(--pico-muted-color,#d6d6d6); color:var(--pico-color,#111); font-size:.85rem; }
+    .table-wrapper table{ min-width:1200px; }
+    .col-action{ width:54px; text-align:center; }
+    .cell-history{ text-align:center; }
+    .timeline-btn{
+      border-radius:999px;
+      border:1px solid var(--pico-primary-border-color, var(--pico-color));
+      background:transparent;
+      width:40px; height:40px;
+      display:inline-flex; align-items:center; justify-content:center;
+      font-size:1.1rem;
+      transition:background .2s ease, transform .2s ease;
+    }
+    .timeline-btn:hover{ background:var(--pico-primary-background); color:var(--pico-primary-inverse); transform:translateY(-1px); }
+    .cell-main{ min-width:24rem; }
+    .task-title{ font-weight:600; font-size:1.05rem; }
+    .task-desc{ margin:.35rem 0 0; color:var(--pico-muted-color); font-size:.9rem; }
+    .task-meta-line{ margin-top:.5rem; display:flex; gap:.4rem; flex-wrap:wrap; }
+    .pill{ display:inline-flex; align-items:center; gap:.35rem; border-radius:999px; padding:.2rem .75rem; background:var(--pico-muted-color,#d9d9d9); color:var(--pico-color,#111); font-size:.8rem; font-weight:500; }
+    .pill--project{ background:var(--pico-secondary-background); color:var(--pico-secondary-inverse); }
+    .pill--project.pill--empty{ opacity:.6; }
+    .pill--priority{ text-transform:lowercase; }
+    .priority-critical{ background:var(--pico-danger-background); color:var(--pico-danger-inverse); }
+    .priority-high{ background:var(--pico-warning-background); color:var(--pico-warning-inverse); }
+    .priority-medium{ background:var(--pico-secondary-background); color:var(--pico-secondary-inverse); }
+    .priority-low{ background:var(--pico-muted-border-color); color:var(--pico-color); }
+    .pill--pending{ background:var(--pico-warning-background); color:var(--pico-warning-inverse); }
+    .activity-chip{ display:inline-flex; align-items:center; gap:.35rem; border-radius:999px; padding:.2rem .7rem; background:var(--pico-primary-background); color:var(--pico-primary-inverse); font-size:.8rem; }
+    .cell-activity small{ display:block; margin-top:.25rem; }
+    .cell-dates strong{ display:block; }
+    .task-timeline-modal::backdrop{ backdrop-filter:blur(2px); background:rgba(0,0,0,.35); }
+    .timeline-modal-body{ min-width:min(640px, 90vw); max-height:80vh; overflow-y:auto; }
+    .timeline-modal-body__header{ display:flex; justify-content:space-between; align-items:center; gap:1rem; }
     .create-task-form{
       display:grid;
       grid-template-columns:repeat(4, minmax(220px, 1fr));
@@ -68,12 +288,21 @@
     .create-task-form button{
       height:44px;
       display:flex; align-items:center; justify-content:center;
-      width:max-content;            /* не растягиваем на всю колонку */
-      justify-self:start;           /* прижимаем к левому краю сетки */
+      width:max-content;
+      justify-self:start;
       padding-inline:1.2rem;
     }
-    @media (max-width: 1100px){ .create-task-form{ grid-template-columns:repeat(2,1fr); } }
-    @media (max-width: 700px){ .create-task-form{ grid-template-columns:1fr; } }
+    .create-task-form select[multiple]{ height:120px; }
+    @media (max-width: 1100px){
+      .create-task-form{ grid-template-columns:repeat(2,1fr); }
+      .tasks-filter-panel{ grid-template-columns:repeat(2, minmax(200px,1fr)); }
+    }
+    @media (max-width: 760px){
+      .table-wrapper table{ min-width:1000px; }
+    }
+    @media (max-width: 700px){
+      .create-task-form{ grid-template-columns:1fr; }
+      .tasks-filter-panel{ grid-template-columns:1fr; }
+    }
   </style>
-  <p class="muted">Если задачу создаёт сотрудник, она появится у него с пометкой «на согласовании» до одобрения менеджером/админом.</p>
 {% endblock %}
