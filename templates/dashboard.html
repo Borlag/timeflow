@@ -49,7 +49,7 @@
         <a href="/dashboard?horizon=month" class="{% if horizon == 'month' %}active{% endif %}">Месяц</a>
       </nav>
     </div>
-    <div class="table-wrapper sticky-table">
+    <div class="table-wrapper sticky-table {% if tasks|length > 12 %}stick{% endif %}">
       <table>
         <thead><tr><th>Задача</th><th>Проект</th><th>Статус</th><th>%</th><th>Дедлайн</th><th>Действия</th></tr></thead>
         <tbody>
@@ -90,4 +90,10 @@
       </table>
     </div>
   </section>
+  <style>
+    /* Секция «Мои задачи»: компактный отступ и ровный заголовок */
+    .tasks-card .section-head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:.5rem}
+    .tasks-card h2{margin:0}
+    .tasks-card .table-wrapper{margin-top:0}
+  </style>
 {% endblock %}

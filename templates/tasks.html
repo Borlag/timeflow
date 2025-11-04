@@ -1,9 +1,13 @@
 {% extends "base.html" %}
+{% block content_class %} content--wide{% endblock %}
 {% block content %}
   <h2>Задачи {% if request.query_params.get('mine') == '1' %}(мои){% endif %}</h2>
-  <nav><a href="/tasks?mine=1">Мои</a> | <a href="/tasks?mine=0">Все</a></nav>
+  <nav class="segmented" aria-label="Фильтр списка задач">
+    <a href="/tasks?mine=1" class="{% if request.query_params.get('mine') == '1' %}active{% endif %}">Мои</a>
+    <a href="/tasks?mine=0" class="{% if request.query_params.get('mine') != '1' %}active{% endif %}">Все</a>
+  </nav>
 
-  <div class="table-wrapper sticky-table">
+  <div class="table-wrapper sticky-table {% if tasks|length > 12 %}stick{% endif %}">
     <table>
       <thead><tr><th>Заголовок</th><th>Проект</th><th>Статус</th><th>Приоритет</th><th>%</th><th>Срок</th><th>Исполнитель</th><th>Согласование</th></tr></thead>
       <tbody>
@@ -28,30 +32,48 @@
 
   <hr>
   <h3>Создать задачу</h3>
-  <form method="post" action="/tasks/new" class="grid">
-    <label>Заголовок <input type="text" name="title" required></label>
-    <label>Приоритет
+  <form method="post" action="/tasks/new" class="create-task-form">
+    <label><span>Заголовок</span><input type="text" name="title" required></label>
+    <label><span>Приоритет</span>
       <select name="priority">
         {% for p in Priority %}<option value="{{ p.value }}">{{ p|priority_label }}</option>{% endfor %}
       </select>
     </label>
-    <label>Описание <textarea name="description"></textarea></label>
-    <label>Проект
+    <label class="col-span-2"><span>Описание</span><textarea name="description"></textarea></label>
+    <label><span>Проект</span>
       <select name="project_id">
         <option value="">—</option>
         {% for p in projects %}<option value="{{ p.id }}">{{ p.code }} — {{ p.name }}</option>{% endfor %}
       </select>
     </label>
-    <label>Исполнитель
+    <label><span>Исполнитель</span>
       <select name="assignee_id" required>
-        {% for u in users %}
-          <option value="{{ u.id }}">{{ u.full_name }}</option>
-        {% endfor %}
+        {% for u in users %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}
       </select>
     </label>
-    <label>Начало <input type="date" name="start_date"></label>
-    <label>Срок <input type="date" name="due_date"></label>
-    <button type="submit">Создать</button>
+    <label><span>Начало</span><input type="date" name="start_date"></label>
+    <label><span>Срок</span><input type="date" name="due_date"></label>
+    <button type="submit" class="primary">Создать</button>
   </form>
+  <style>
+    /* Чёткая сетка формы + идеальная центровка кнопки */
+    .create-task-form{
+      display:grid;
+      grid-template-columns:repeat(4, minmax(220px, 1fr));
+      gap:1rem;
+      align-items:end;
+    }
+    .create-task-form .col-span-2{ grid-column:span 2; }
+    .create-task-form textarea{ min-height:3rem; resize:vertical; }
+    .create-task-form button{
+      height:44px;
+      display:flex; align-items:center; justify-content:center;
+      width:max-content;            /* не растягиваем на всю колонку */
+      justify-self:start;           /* прижимаем к левому краю сетки */
+      padding-inline:1.2rem;
+    }
+    @media (max-width: 1100px){ .create-task-form{ grid-template-columns:repeat(2,1fr); } }
+    @media (max-width: 700px){ .create-task-form{ grid-template-columns:1fr; } }
+  </style>
   <p class="muted">Если задачу создаёт сотрудник, она появится у него с пометкой «на согласовании» до одобрения менеджером/админом.</p>
 {% endblock %}

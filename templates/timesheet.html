@@ -10,9 +10,9 @@
   <p class="muted">Выберите <strong>задачу</strong> или <strong>проект</strong>. Если выбраны оба — учитывается задача. По умолчанию прямой ввод за предыдущий день; остальные даты — на согласовании.</p>
 
   <article>
-    <form method="post" action="/timesheet/add" class="grid">
+    <form method="post" action="/timesheet/add" class="ts-form">
       <input type="hidden" name="date" value="{{ date.isoformat() }}">
-      <label>Проект
+      <label><span>Проект</span>
         <select name="project_id">
           <option value="">—</option>
           {% for p in projects %}
@@ -20,7 +20,7 @@
           {% endfor %}
         </select>
       </label>
-      <label>Задача
+      <label><span>Задача</span>
         <select name="task_id">
           <option value="">—</option>
           {% for t in tasks %}
@@ -28,18 +28,28 @@
           {% endfor %}
         </select>
       </label>
-      <label>Часы
-        <input type="number" name="hours" step="0.25" min="0" required placeholder="напр. 2.5">
+      <label><span>Часы</span>
+        <input type="number" name="hours" step="0.25" min="0" required inputmode="decimal" placeholder="напр. 2.5">
       </label>
-      <label>Комментарий
+      <label><span>Комментарий</span>
         <input type="text" name="notes" placeholder="что делал(а)">
       </label>
       <button type="submit">Добавить запись</button>
     </form>
   </article>
+  <style>
+    .ts-form{
+      display:grid;
+      grid-template-columns:1.1fr 1.6fr .7fr 2fr auto;
+      gap:1rem;
+      align-items:end;
+    }
+    .ts-form button{ height:44px; display:flex; align-items:center; justify-content:center; }
+    @media (max-width: 900px){ .ts-form{ grid-template-columns:1fr; } }
+  </style>
 
   <h3>Введённые записи</h3>
-  <div class="table-wrapper sticky-table">
+  <div class="table-wrapper sticky-table {% if entries|length > 12 %}stick{% endif %}">
     <table>
       <thead><tr><th>Проект/Задача</th><th>Часы</th><th>Статус</th><th>Комментарий</th><th>Действия</th></tr></thead>
       <tbody>
@@ -73,6 +83,18 @@
       </tbody>
     </table>
   </div>
+  <style>
+    /* Сетка формы табеля: все поля в одну строку на десктопе */
+    .ts-form{
+      display:grid;
+      grid-template-columns:1.1fr 1.6fr .7fr 2fr auto;
+      gap:1rem;
+      align-items:end;
+    }
+    @media (max-width: 900px){
+      .ts-form{ grid-template-columns:1fr; }
+    }
+  </style>
 
   <nav class="pager">
     <a href="/timesheet?date={{ prev.isoformat() }}" class="contrast">← {{ prev.strftime("%d.%m") }}</a>

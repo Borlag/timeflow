@@ -182,8 +182,19 @@ def dashboard(request: Request, db: Session = Depends(get_db), user: User = Depe
         next_month = (start.replace(day=28) + dt.timedelta(days=4)).replace(day=1)
         end = next_month - dt.timedelta(days=1)
 
+    # Фильтрация задач по горизонту:
+    # - задачи с due_date в диапазоне
+    # - задачи со start_date в диапазоне
+    # - задачи без due_date (всегда показываем)
+    date_filter = or_(
+        Task.due_date.between(start, end),
+        Task.start_date.between(start, end),
+        Task.due_date.is_(None),
+    )
     tasks = db.scalars(
-        select(Task).where(Task.assignee_id == user.id).order_by(Task.priority.desc(), Task.due_date.nulls_last())
+        select(Task)
+        .where(Task.assignee_id == user.id, date_filter)
+        .order_by(Task.priority.desc(), Task.due_date.nulls_last())
     ).all()
 
     # Attendance for today

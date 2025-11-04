@@ -25,6 +25,46 @@
       };
     })();
   </script>
+  <style>
+    /* Высота фиксированного топбара для расчёта sticky-отступов (унификация переменных) */
+    :root{ --tf-topbar-h: 56px; --topbar-h: 56px; }
+
+    /* Широкие таблицы: всегда есть горизонтальный скролл при нехватке места */
+    .table-wrapper{ overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    .table-wrapper table{ width:100%; border-collapse:separate; border-spacing:0; }
+    .sticky-table{ position: relative; }
+    /* По умолчанию липкая шапка ВЫКЛЮЧЕНА — отменяем прежние глобальные правила */
+    .sticky-table thead th{ position: static; }
+
+    /* Липкая шапка теперь ВЫКЛ по умолчанию.
+       Включаем только там, где есть класс .stick на .sticky-table */
+    .sticky-table.stick thead th{
+      position: sticky;
+      top: var(--tf-topbar-h);
+      z-index: 10;
+      /* надёжный непрозрачный фон с запасным значением */
+      background: var(--pico-card-background-color, var(--pico-background-color, #0b0f14));
+      /* визуальное отделение хедера от строк */
+      box-shadow: 0 1px 0 var(--pico-muted-border-color, rgba(255,255,255,.12));
+    }
+    .sticky-table.stick thead th::after{ display:none; }
+    .sticky-table.stick thead{ position: relative; z-index: 10; }
+    .sticky-table.stick tbody{ position: relative; z-index: 1; }
+    .sticky-table thead th, .sticky-table tbody td{
+      padding:.6rem .8rem; line-height:1.35; vertical-align:middle;
+    }
+    /* Не даём колонкам схлопываться до каши */
+    .sticky-table table{ min-width: 1100px; }
+    .sticky-table th, .sticky-table td{ white-space:nowrap; }
+    /* Первая колонка (заголовок/описание) переносится и шире */
+    .sticky-table td:first-child, .sticky-table th:first-child{
+      white-space:normal; min-width:22rem;
+    }
+
+    /* Стековая разметка инпутов: подпись над контролом (устраняет «сползания») */
+    label > span{ display:block; margin-bottom:.35rem; }
+    label > input, label > select, label > textarea{ width:100%; }
+  </style>
 </head>
 <body class="layout">
   <input id="nav-toggle" type="checkbox" hidden>

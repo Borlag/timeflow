@@ -129,8 +129,15 @@
   min-width: 120px;
 }
 
-/* Sticky table headers */
-.sticky-table thead th { position: sticky; top: var(--topbar-h); background: var(--pico-card-background-color); z-index: 5; }
+/* Sticky headers: ТЕПЕРЬ только opt-in — когда родителю задан класс .stick.
+   По умолчанию позиционирование статичное (исключает перекрытие коротких таблиц). */
+.sticky-table thead th { position: static; }
+.sticky-table.stick thead th {
+  position: sticky;
+  top: var(--tf-topbar-h, var(--topbar-h));
+  background: var(--pico-card-background-color);
+  z-index: 10;
+}
 
 /* Backdrop (overlay) */
 .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.25); opacity: 0; pointer-events: none; transition: opacity .2s ease; z-index: 1050; }
