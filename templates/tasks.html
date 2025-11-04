@@ -170,7 +170,7 @@
         </tr>
         {% endfor %}
         {% if tasks|length == 0 %}
-        <tr><td colspan="8" class="muted">Нет задач</td></tr>
+        <tr><td colspan="12" class="muted">Нет задач</td></tr>
         {% endif %}
       </tbody>
     </table>
@@ -188,20 +188,20 @@
   <hr>
   <h3>Создать задачу</h3>
   <form method="post" action="/tasks/new" class="create-task-form">
-    <label><span>Заголовок</span><input type="text" name="title" required></label>
-    <label><span>Приоритет</span>
-      <select name="priority">
-        {% for p in Priority %}<option value="{{ p.value }}">{{ p|priority_label }}</option>{% endfor %}
-      </select>
-    </label>
-    <label class="col-span-2"><span>Описание</span><textarea name="description"></textarea></label>
-    <label><span>Проект</span>
+    <label class="col-span-6"><span>Заголовок</span><input type="text" name="title" required></label>
+    <label class="col-span-3"><span>Проект</span>
       <select name="project_id">
         <option value="">—</option>
         {% for p in projects %}<option value="{{ p.id }}">{{ p.code }} — {{ p.name }}</option>{% endfor %}
       </select>
     </label>
-    <label><span>Исполнитель</span>
+    <label class="col-span-3"><span>Приоритет</span>
+      <select name="priority">
+        {% for p in Priority %}<option value="{{ p.value }}">{{ p|priority_label }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="col-span-12"><span>Описание</span><textarea name="description"></textarea></label>
+    <label class="col-span-3"><span>Исполнитель</span>
       <select name="assignee_id" required>
         {% for u in users %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}
       </select>
@@ -279,13 +279,18 @@
     .timeline-modal-body__header{ display:flex; justify-content:space-between; align-items:center; gap:1rem; }
     .create-task-form{
       display:grid;
-      grid-template-columns:repeat(4, minmax(220px, 1fr));
+      grid-template-columns:repeat(12, minmax(0, 1fr));
       gap:1rem;
-      align-items:end;
+      align-items:start;
     }
-    .create-task-form .col-span-2{ grid-column:span 2; }
-    .create-task-form textarea{ min-height:3rem; resize:vertical; }
-    .create-task-form button{
+    .create-task-form label{ display:flex; flex-direction:column; gap:.45rem; }
+    .create-task-form .col-span-3{ grid-column:span 3; }
+    .create-task-form .col-span-6{ grid-column:span 6; }
+    .create-task-form .col-span-12{ grid-column:span 12; }
+    .create-task-form textarea{ min-height:4.5rem; resize:vertical; }
+    .create-task-form select[multiple]{ height:140px; }
+    .create-task-form .form-actions{ display:flex; justify-content:flex-start; }
+    .create-task-form .form-actions button{
       height:44px;
       display:flex; align-items:center; justify-content:center;
       width:max-content;
